@@ -1,43 +1,44 @@
+$ErrorActionPreference = "Stop"
+
 # ============================================
-# 設定
+# config
 # ============================================
 $SourceWebUrl = "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei"
 $SourceListServerRelativeUrl = "/cc/jinkyu/kyuyokaikei/Lists/List1"
 
-$TargetWebUrl = "https://na-n.gbase.gsdf.mod.go.jp/na/NA/NAFin/HQ/oa"
-$TargetFolderServerRelativeUrl = "/na/NA/NAFin/HQ/oa/DocLib10"
-$TargetFileName = "info-search-data.json"
-
-$SourceListLabel = "人給給与（会計）業務Q&A"
+$OutputFile = Join-Path $PSScriptRoot "info-search-data.json"
 
 $BatchSize = 500
-$MaxFetch = 5000
+$MaxFetch  = 5000
 
-# 画面側で使うキーと、元リストの表示名
+# 画面側で使うキー : 元リストの表示名
 $DisplayNames = [ordered]@{
-    businessCategory = "業務区分"
-    actorCategory    = "アクター区分"
-    operatorStaffNo  = "職員番号（操作者）"
-    targetStaffNo    = "職員番号（該当者）"
-    manualPage       = "マニュアルページ"
-    title            = "タイトル"
-    body             = "本文（個人情報の入力禁止）"
-    directionCategory= "方面等区分"
-    unitName         = "部隊等名"
-    rankName         = "氏階級"
-    extensionNo      = "内線番号"
-    answer           = "回答"
-    situation        = "状況"
-    batchId          = "バッチID"
+    businessCategory  = "業務区分"
+    actorCategory     = "アクター区分"
+    operatorStaffNo   = "職員番号（操作者）"
+    targetStaffNo     = "職員番号（該当者）"
+    manualPage        = "マニュアルページ"
+    title             = "タイトル"
+    body              = "本文（個人情報の入力禁止）"
+    directionCategory = "方面等区分"
+    unitName          = "部隊等名"
+    rankName          = "氏階級"
+    extensionNo       = "内線番号"
+    answer            = "回答"
+    situation         = "状況"
+    batchId           = "バッチID"
 }
 
 # ============================================
-# 共通関数
+# functions
 # ============================================
 function Invoke-SpGetJson {
     param(
-        [Parameter(Mandatory=$true)][string]$Url
+        [Parameter(Mandatory = $true)]
+        [string]$Url
     )
+
+    Write-Host "GET $Url" -ForegroundColor DarkGray
 
     Invoke-RestMethod `
         -Uri $Url `
@@ -48,47 +49,24 @@ function Invoke-SpGetJson {
         }
 }
 
-function Invoke-SpPostJson {
-    param(
-        [Parameter(Mandatory=$true)][string]$Url,
-        [Parameter(Mandatory=$false)]$Body = $null,
-        [Parameter(Mandatory=$false)][hashtable]$Headers = @{},
-        [Parameter(Mandatory=$false)][string]$ContentType = "application/json;odata=verbose"
-    )
-
-    Invoke-RestMethod `
-        -Uri $Url `
-        -Method Post `
-        -UseDefaultCredentials `
-        -Headers $Headers `
-        -ContentType $ContentType `
-        -Body $Body
-}
-
-function Get-FormDigest {
-    param(
-        [Parameter(Mandatory=$true)][string]$WebUrl
-    )
-
-    $ctx = Invoke-SpPostJson -Url "$WebUrl/_api/contextinfo"
-    return $ctx.d.GetContextWebInformation.FormDigestValue
-}
-
 function Normalize-FieldValue {
     param(
-        [Parameter(Mandatory=$false)]$Value
+        [Parameter(Mandatory = $false)]
+        $Value
     )
 
     if ($null -eq $Value) {
         return ""
     }
 
-    if ($Value -is [string] -or
+    if (
+        $Value -is [string] -or
         $Value -is [int] -or
         $Value -is [long] -or
         $Value -is [double] -or
         $Value -is [decimal] -or
-        $Value -is [bool]) {
+        $Value -is [bool]
+    ) {
         return [string]$Value
     }
 
@@ -104,7 +82,10 @@ function Normalize-FieldValue {
     }
 
     if ($Value.PSObject -and $Value.PSObject.Properties.Name -contains "Url") {
-        if ($Value.PSObject.Properties.Name -contains "Description" -and -not [string]::IsNullOrWhiteSpace($Value.Description)) {
+        if (
+            $Value.PSObject.Properties.Name -contains "Description" -and
+            -not [string]::IsNullOrWhiteSpace($Value.Description)
+        ) {
             return "$($Value.Description) $($Value.Url)"
         }
         return [string]$Value.Url
@@ -117,138 +98,164 @@ function Normalize-FieldValue {
     return ""
 }
 
-# ============================================
-# 1) 元リストのフィールドマップ取得
-# ============================================
-$listUrlEncoded = [uri]::EscapeDataString($SourceListServerRelativeUrl)
+try {
+    Write-Host "=== START ===" -ForegroundColor Cyan
 
-$fieldsUrl = "$SourceWebUrl/_api/web/GetList(@listUrl)/fields?@listUrl='$listUrlEncoded'&`$select=Title,InternalName,Hidden"
-$fieldsRes = Invoke-SpGetJson -Url $fieldsUrl
+    # ----------------------------------------
+    # 1) field map
+    # ----------------------------------------
+    $listUrlEncoded = [uri]::EscapeDataString($SourceListServerRelativeUrl)
 
-$fieldMap = @{}
-foreach ($field in $fieldsRes.d.results) {
-    if (-not $field.Hidden -and -not $fieldMap.ContainsKey($field.Title)) {
-        $fieldMap[$field.Title] = $field.InternalName
-    }
-}
+    $fieldsUrl = (
+        '{0}/_api/web/GetList(@listUrl)/fields?@listUrl=''{1}''&$select=Title,InternalName,Hidden' -f
+        $SourceWebUrl,
+        $listUrlEncoded
+    )
 
-# ============================================
-# 2) 取得対象列を組み立て
-# ============================================
-$selectNames = New-Object System.Collections.Generic.List[string]
-$selectNames.Add("Id")
-$selectNames.Add("Title")
-$selectNames.Add("Modified")
+    $fieldsRes = Invoke-SpGetJson -Url $fieldsUrl
 
-foreach ($key in $DisplayNames.Keys) {
-    if ($key -eq "title") {
-        continue
-    }
-
-    $displayName = $DisplayNames[$key]
-    if ($fieldMap.ContainsKey($displayName)) {
-        $internalName = $fieldMap[$displayName]
-        if (-not $selectNames.Contains($internalName)) {
-            $selectNames.Add($internalName)
+    $fieldMap = @{}
+    foreach ($field in $fieldsRes.d.results) {
+        if (-not $field.Hidden -and -not $fieldMap.ContainsKey($field.Title)) {
+            $fieldMap[$field.Title] = $field.InternalName
         }
     }
-}
 
-$selectParam = [uri]::EscapeDataString(($selectNames -join ","))
+    Write-Host ("field count : {0}" -f $fieldMap.Count) -ForegroundColor Green
 
-# ============================================
-# 3) 元リストのアイテム取得（ページング対応）
-# ============================================
-$items = New-Object System.Collections.Generic.List[object]
+    # ----------------------------------------
+    # 2) select columns
+    # ----------------------------------------
+    $selectNames = New-Object System.Collections.Generic.List[string]
+    $selectNames.Add("Id")
+    $selectNames.Add("Title")
+    $selectNames.Add("Modified")
 
-$nextUrl = "$SourceWebUrl/_api/web/GetList(@listUrl)/items?@listUrl='$listUrlEncoded'&`$top=$BatchSize&`$select=$selectParam&`$orderby=Modified desc"
-
-while (-not [string]::IsNullOrWhiteSpace($nextUrl)) {
-    $res = Invoke-SpGetJson -Url $nextUrl
-
-    foreach ($raw in $res.d.results) {
-        $item = [ordered]@{
-            id       = [int]$raw.Id
-            modified = [string]$raw.Modified
+    foreach ($key in $DisplayNames.Keys) {
+        if ($key -eq "title") {
+            continue
         }
 
-        foreach ($key in $DisplayNames.Keys) {
-            if ($key -eq "title") {
-                $item[$key] = if ($null -ne $raw.Title) { [string]$raw.Title } else { "" }
-                continue
+        $displayName = $DisplayNames[$key]
+        if ($fieldMap.ContainsKey($displayName)) {
+            $internalName = $fieldMap[$displayName]
+            if (-not $selectNames.Contains($internalName)) {
+                $selectNames.Add($internalName)
+            }
+        }
+        else {
+            Write-Host ("field not found : {0}" -f $displayName) -ForegroundColor Yellow
+        }
+    }
+
+    $selectParam = [uri]::EscapeDataString(($selectNames -join ","))
+
+    # ----------------------------------------
+    # 3) load items
+    # ----------------------------------------
+    $items = New-Object System.Collections.Generic.List[object]
+
+    $nextUrl = (
+        '{0}/_api/web/GetList(@listUrl)/items?@listUrl=''{1}''&$top={2}&$select={3}&$orderby=Modified desc' -f
+        $SourceWebUrl,
+        $listUrlEncoded,
+        $BatchSize,
+        $selectParam
+    )
+
+    while (-not [string]::IsNullOrWhiteSpace($nextUrl)) {
+        $res = Invoke-SpGetJson -Url $nextUrl
+
+        foreach ($raw in $res.d.results) {
+            $item = [ordered]@{
+                id       = [int]$raw.Id
+                modified = [string]$raw.Modified
             }
 
-            $displayName = $DisplayNames[$key]
-            $value = ""
-
-            if ($fieldMap.ContainsKey($displayName)) {
-                $internalName = $fieldMap[$displayName]
-                if ($raw.PSObject.Properties.Name -contains $internalName) {
-                    $value = Normalize-FieldValue -Value $raw.$internalName
+            foreach ($key in $DisplayNames.Keys) {
+                if ($key -eq "title") {
+                    $item[$key] = if ($null -ne $raw.Title) { [string]$raw.Title } else { "" }
+                    continue
                 }
+
+                $displayName = $DisplayNames[$key]
+                $value = ""
+
+                if ($fieldMap.ContainsKey($displayName)) {
+                    $internalName = $fieldMap[$displayName]
+
+                    if ($raw.PSObject.Properties.Name -contains $internalName) {
+                        $value = Normalize-FieldValue -Value $raw.$internalName
+                    }
+                }
+
+                $item[$key] = $value
             }
 
-            $item[$key] = $value
+            if ([string]::IsNullOrWhiteSpace($item.title)) {
+                $item.title = "(タイトルなし)"
+            }
+
+            $items.Add([pscustomobject]$item)
+
+            if ($items.Count -ge $MaxFetch) {
+                Write-Host ("hit max fetch : {0}" -f $MaxFetch) -ForegroundColor Yellow
+                $nextUrl = ""
+                break
+            }
         }
 
-        if ([string]::IsNullOrWhiteSpace($item.title)) {
-            $item.title = "(タイトルなし)"
-        }
-
-        $items.Add([pscustomobject]$item)
-
-        if ($items.Count -ge $MaxFetch) {
-            Write-Host "最大取得件数 $MaxFetch 件に達したため打ち切ります。"
-            $nextUrl = ""
+        if ([string]::IsNullOrWhiteSpace($nextUrl)) {
             break
         }
+
+        if (
+            $res.d.PSObject.Properties.Name -contains "__next" -and
+            -not [string]::IsNullOrWhiteSpace($res.d.__next)
+        ) {
+            $nextUrl = $res.d.__next
+        }
+        else {
+            $nextUrl = ""
+        }
     }
 
-    if ([string]::IsNullOrWhiteSpace($nextUrl)) {
-        break
+    Write-Host ("item count : {0}" -f $items.Count) -ForegroundColor Green
+
+    # ----------------------------------------
+    # 4) write local json
+    # ----------------------------------------
+    $payload = [ordered]@{
+        generatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        itemCount   = $items.Count
+        items       = $items
     }
 
-    if ($res.d.PSObject.Properties.Name -contains "__next" -and -not [string]::IsNullOrWhiteSpace($res.d.__next)) {
-        $nextUrl = $res.d.__next
-    } else {
-        $nextUrl = ""
+    $jsonText = $payload | ConvertTo-Json -Depth 8
+
+    [System.IO.File]::WriteAllText(
+        $OutputFile,
+        $jsonText,
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
+    Write-Host ("local json created : {0}" -f $OutputFile) -ForegroundColor Cyan
+    Write-Host "=== SUCCESS ===" -ForegroundColor Cyan
+}
+catch {
+    Write-Host ""
+    Write-Host "=== ERROR ===" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Red
+
+    if ($_.InvocationInfo) {
+        Write-Host ("line : {0}" -f $_.InvocationInfo.ScriptLineNumber) -ForegroundColor Yellow
+    }
+
+    if ($_.ScriptStackTrace) {
+        Write-Host ""
+        Write-Host $_.ScriptStackTrace -ForegroundColor DarkYellow
     }
 }
-
-# ============================================
-# 4) JSON化
-# ============================================
-$payload = [ordered]@{
-    generatedAt     = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-    sourceListLabel = $SourceListLabel
-    itemCount       = $items.Count
-    items           = $items
+finally {
+    Read-Host "finish. press Enter"
 }
-
-$jsonText = $payload | ConvertTo-Json -Depth 8
-
-$tempFile = Join-Path $env:TEMP $TargetFileName
-[System.IO.File]::WriteAllText($tempFile, $jsonText, New-Object System.Text.UTF8Encoding($false))
-
-Write-Host "JSON作成:" $tempFile
-Write-Host "件数:" $items.Count
-
-# ============================================
-# 5) na-n 側にアップロード
-# ============================================
-$digest = Get-FormDigest -WebUrl $TargetWebUrl
-
-$uploadUrl = "$TargetWebUrl/_api/web/GetFolderByServerRelativeUrl('$TargetFolderServerRelativeUrl')/Files/add(url='$TargetFileName',overwrite=true)"
-
-Invoke-RestMethod `
-    -Uri $uploadUrl `
-    -Method Post `
-    -UseDefaultCredentials `
-    -Headers @{
-        "Accept"          = "application/json;odata=verbose"
-        "X-RequestDigest" = $digest
-    } `
-    -ContentType "application/octet-stream" `
-    -InFile $tempFile
-
-Write-Host "アップロード完了: $TargetFolderServerRelativeUrl/$TargetFileName"
