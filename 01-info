@@ -2,59 +2,19 @@
   "use strict";
 
   const CONFIG = {
-    WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
-    LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
-
     LIST_LABEL: "人給給与（会計）業務Ｑ＆Ａ",
-    LIST_NOTE: "PW はヘルプデスクへ確認",
-
-    BATCH_SIZE: 500,
-    MAX_FETCH: 5000,
-    PAGE_SIZE: 15,
-
-    DISPLAY_NAMES: {
-      businessCategory: "業務区分",
-      actorCategory: "アクター区分",
-      operatorStaffNo: "職員番号（操作者）",
-      targetStaffNo: "職員番号（該当者）",
-      manualPage: "マニュアルページ",
-      title: "タイトル",
-      body: "本文（個人情報の入力禁止）",
-      directionCategory: "方面等区分",
-      unitName: "部隊等名",
-      rankName: "氏階級",
-      extensionNo: "内線番号",
-      answer: "回答",
-      situation: "状況",
-      batchId: "バッチID"
-    },
-
-    SEARCH_TARGET_KEYS: [
-      "title",
-      "businessCategory",
-      "actorCategory",
-      "operatorStaffNo",
-      "targetStaffNo",
-      "manualPage",
-      "body",
-      "directionCategory",
-      "unitName",
-      "rankName",
-      "extensionNo",
-      "answer",
-      "situation",
-      "batchId"
-    ]
+    LIST_NOTE: "中継JSONを参照",
+    JSON_URL: "./info-search-data.json",
+    PAGE_SIZE: 15
   };
 
   const state = {
-    fieldMap: {},
     allItems: [],
     filteredItems: [],
     selectedId: null,
     keywords: [],
     currentPage: 1,
-    isTruncated: false
+    generatedAt: ""
   };
 
   document.addEventListener("DOMContentLoaded", async () => {
@@ -64,14 +24,9 @@
   });
 
   function bindEvents() {
-    const searchBtn = document.getElementById("searchBtn");
-    const clearBtn = document.getElementById("clearBtn");
-    const keywordInput = document.getElementById("keywordInput");
-
-    searchBtn.addEventListener("click", applySearch);
-    clearBtn.addEventListener("click", clearSearch);
-
-    keywordInput.addEventListener("keydown", (e) => {
+    document.getElementById("searchBtn").addEventListener("click", applySearch);
+    document.getElementById("clearBtn").addEventListener("click", clearSearch);
+    document.getElementById("keywordInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         applySearch();
       }
@@ -86,174 +41,38 @@
   async function init() {
     try {
       setError("");
-      setStatus("初期読込中...");
+      setStatus("JSON読込中...");
 
-      await loadFieldMap();
-      await loadAllItems();
-
-      state.filteredItems = [...state.allItems];
-      state.currentPage = 1;
-      syncSelectedToCurrentPage(true);
-
-      renderAll();
-
-      if (state.isTruncated) {
-        setStatus(`読込完了（${CONFIG.MAX_FETCH}件まで取得）`);
-      } else {
-        setStatus("読込完了");
-      }
-    } catch (err) {
-      console.error(err);
-      setStatus("");
-      setError("読込失敗: " + err.message);
-      renderAll();
-    }
-  }
-
-  async function loadFieldMap() {
-    const url = buildFieldsUrl();
-
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json;odata=verbose"
-      },
-      credentials: "same-origin"
-    });
-
-    if (!res.ok) {
-      throw new Error(`fields API HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    const results = data?.d?.results || [];
-    const map = {};
-
-    results
-      .filter((field) => !field.Hidden)
-      .forEach((field) => {
-        if (!map[field.Title]) {
-          map[field.Title] = field.InternalName;
-        }
-      });
-
-    state.fieldMap = map;
-  }
-
-  async function loadAllItems() {
-    const collected = [];
-    let nextUrl = buildItemsUrl();
-
-    while (nextUrl) {
-      const res = await fetch(nextUrl, {
+      const res = await fetch(`${CONFIG.JSON_URL}?t=${Date.now()}`, {
         method: "GET",
-        headers: {
-          "Accept": "application/json;odata=verbose"
-        },
+        cache: "no-store",
         credentials: "same-origin"
       });
 
       if (!res.ok) {
-        throw new Error(`items API HTTP ${res.status}`);
+        throw new Error(`JSON HTTP ${res.status}`);
       }
 
       const data = await res.json();
-      const results = data?.d?.results || [];
 
-      for (const raw of results) {
-        collected.push(normalizeItem(raw));
+      state.allItems = Array.isArray(data.items) ? data.items : [];
+      state.filteredItems = [...state.allItems];
+      state.generatedAt = data.generatedAt || "";
+      state.currentPage = 1;
 
-        if (collected.length >= CONFIG.MAX_FETCH) {
-          state.isTruncated = true;
-          nextUrl = "";
-          break;
-        }
-      }
+      syncSelectedToCurrentPage(true);
+      renderAll();
 
-      if (!state.isTruncated) {
-        nextUrl = data?.d?.__next || "";
-      }
+      setStatus(state.generatedAt ? `読込完了 / 最終同期: ${state.generatedAt}` : "読込完了");
+    } catch (err) {
+      console.error(err);
+      state.allItems = [];
+      state.filteredItems = [];
+      state.selectedId = null;
+      renderAll();
+      setStatus("");
+      setError("読込失敗: " + err.message);
     }
-
-    state.allItems = collected;
-  }
-
-  function buildFieldsUrl() {
-    const base = `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList(@listUrl)/fields`;
-    return `${base}?@listUrl='${encodeURIComponent(CONFIG.LIST_SERVER_RELATIVE_URL)}'&$select=Title,InternalName,Hidden`;
-  }
-
-  function buildItemsUrl() {
-    const selectNames = ["Id", "Title", "Modified"];
-
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach((key) => {
-      const internalName = getInternalName(key);
-      if (internalName && !selectNames.includes(internalName)) {
-        selectNames.push(internalName);
-      }
-    });
-
-    const base = `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList(@listUrl)/items`;
-    const query = [
-      `@listUrl='${encodeURIComponent(CONFIG.LIST_SERVER_RELATIVE_URL)}'`,
-      `$top=${CONFIG.BATCH_SIZE}`,
-      `$select=${encodeURIComponent(selectNames.join(","))}`,
-      `$orderby=${encodeURIComponent("Modified desc")}`
-    ].join("&");
-
-    return `${base}?${query}`;
-  }
-
-  function getInternalName(key) {
-    if (key === "title") return "Title";
-    if (key === "modified") return "Modified";
-
-    const displayName = CONFIG.DISPLAY_NAMES[key];
-    return state.fieldMap[displayName] || null;
-  }
-
-  function normalizeItem(raw) {
-    const item = {
-      id: raw.Id,
-      modified: raw.Modified || ""
-    };
-
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach((key) => {
-      const internalName = getInternalName(key);
-      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
-    });
-
-    if (!item.title) {
-      item.title = "(タイトルなし)";
-    }
-
-    return item;
-  }
-
-  function normalizeFieldValue(value) {
-    if (value === null || value === undefined) return "";
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return String(value);
-    }
-
-    if (Array.isArray(value?.results)) {
-      return value.results
-        .map((v) => normalizeFieldValue(v))
-        .filter(Boolean)
-        .join(" / ");
-    }
-
-    if (typeof value === "object") {
-      if (value.Url) {
-        return value.Description ? `${value.Description} ${value.Url}` : value.Url;
-      }
-      if (value.Title) {
-        return value.Title;
-      }
-    }
-
-    return "";
   }
 
   function applySearch() {
@@ -271,13 +90,27 @@
       syncSelectedToCurrentPage(true);
       renderAll();
       setError("");
-      setStatus("全件表示");
+      setStatus(state.generatedAt ? `全件表示 / 最終同期: ${state.generatedAt}` : "全件表示");
       return;
     }
 
     state.filteredItems = state.allItems.filter((item) => {
-      const source = CONFIG.SEARCH_TARGET_KEYS
-        .map((key) => item[key] || "")
+      const source = [
+        item.title,
+        item.businessCategory,
+        item.actorCategory,
+        item.operatorStaffNo,
+        item.targetStaffNo,
+        item.manualPage,
+        item.body,
+        item.directionCategory,
+        item.unitName,
+        item.rankName,
+        item.extensionNo,
+        item.answer,
+        item.situation,
+        item.batchId
+      ]
         .join(" ")
         .toLowerCase();
 
@@ -287,7 +120,7 @@
     syncSelectedToCurrentPage(true);
     renderAll();
     setError("");
-    setStatus("検索完了");
+    setStatus(state.generatedAt ? `検索完了 / 最終同期: ${state.generatedAt}` : "検索完了");
   }
 
   function clearSearch() {
@@ -300,7 +133,7 @@
     syncSelectedToCurrentPage(true);
     renderAll();
     setError("");
-    setStatus("検索条件をクリアしました");
+    setStatus(state.generatedAt ? `検索条件をクリアしました / 最終同期: ${state.generatedAt}` : "検索条件をクリアしました");
   }
 
   function renderAll() {
@@ -333,7 +166,7 @@
 
       return `
         <div class="list-item ${selectedClass}" data-id="${item.id}">
-          <div class="item-title">${highlightPlainText(escapeHtml(item.title), state.keywords)}</div>
+          <div class="item-title">${highlightPlainText(escapeHtml(item.title || "(タイトルなし)"), state.keywords)}</div>
 
           <div class="chips">
             ${item.businessCategory ? `<span class="chip">${escapeHtml(item.businessCategory)}</span>` : ""}
@@ -372,7 +205,6 @@
     }
 
     const tokens = buildPageTokens(state.currentPage, totalPages);
-
     const html = [
       `<button type="button" class="pager-btn" data-page="${state.currentPage - 1}" ${state.currentPage <= 1 ? "disabled" : ""}>前へ</button>`
     ];
@@ -384,9 +216,7 @@
       }
 
       const activeClass = token === state.currentPage ? "active" : "";
-      html.push(
-        `<button type="button" class="pager-btn ${activeClass}" data-page="${token}">${token}</button>`
-      );
+      html.push(`<button type="button" class="pager-btn ${activeClass}" data-page="${token}">${token}</button>`);
     });
 
     html.push(
@@ -397,8 +227,7 @@
 
     pagerArea.querySelectorAll("button[data-page]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const page = Number(btn.dataset.page);
-        changePage(page);
+        changePage(Number(btn.dataset.page));
       });
     });
   }
@@ -435,7 +264,7 @@
     }
 
     detailArea.innerHTML = `
-      <h2 class="detail-title">${highlightPlainText(escapeHtml(item.title), state.keywords)}</h2>
+      <h2 class="detail-title">${highlightPlainText(escapeHtml(item.title || "(タイトルなし)"), state.keywords)}</h2>
 
       <div class="detail-grid">
         ${renderGridRow("業務区分", item.businessCategory)}
@@ -502,12 +331,8 @@
     if (!state.filteredItems.length) return [];
 
     const totalPages = getTotalPages();
-    if (state.currentPage > totalPages) {
-      state.currentPage = totalPages;
-    }
-    if (state.currentPage < 1) {
-      state.currentPage = 1;
-    }
+    if (state.currentPage > totalPages) state.currentPage = totalPages;
+    if (state.currentPage < 1) state.currentPage = 1;
 
     const startIndex = (state.currentPage - 1) * CONFIG.PAGE_SIZE;
     const endIndex = startIndex + CONFIG.PAGE_SIZE;
@@ -528,19 +353,11 @@
     const start = Math.max(2, current - 1);
     const end = Math.min(total - 1, current + 1);
 
-    if (start > 2) {
-      tokens.push("...");
-    }
-
-    for (let i = start; i <= end; i += 1) {
-      tokens.push(i);
-    }
-
-    if (end < total - 1) {
-      tokens.push("...");
-    }
-
+    if (start > 2) tokens.push("...");
+    for (let i = start; i <= end; i += 1) tokens.push(i);
+    if (end < total - 1) tokens.push("...");
     tokens.push(total);
+
     return tokens;
   }
 
@@ -555,7 +372,6 @@
         const safeUrl = escapeHtml(part.value);
         return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`;
       }
-
       return highlightPlainText(escapeHtml(part.value), keywords);
     }).join("");
   }
@@ -568,25 +384,14 @@
 
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) {
-        parts.push({
-          type: "text",
-          value: text.slice(lastIndex, match.index)
-        });
+        parts.push({ type: "text", value: text.slice(lastIndex, match.index) });
       }
-
-      parts.push({
-        type: "url",
-        value: match[0]
-      });
-
+      parts.push({ type: "url", value: match[0] });
       lastIndex = regex.lastIndex;
     }
 
     if (lastIndex < text.length) {
-      parts.push({
-        type: "text",
-        value: text.slice(lastIndex)
-      });
+      parts.push({ type: "text", value: text.slice(lastIndex) });
     }
 
     return parts;
@@ -634,9 +439,7 @@
   }
 
   function highlightPlainText(escapedText, keywords) {
-    if (!keywords || !keywords.length) {
-      return escapedText;
-    }
+    if (!keywords || !keywords.length) return escapedText;
 
     let result = escapedText;
 
