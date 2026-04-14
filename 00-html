@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>情報検索台帳</title>
+  <style>
+    :root {
+      --bg: #f4f6fa;
+      --panel: #ffffff;
+      --line: #d7dee8;
+      --text: #1f2937;
+      --sub: #667085;
+      --accent: #1f6feb;
+      --accent-soft: #e8f1ff;
+      --hover: #f8fbff;
+      --selected: #eef5ff;
+      --mark: #fff2a8;
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+      --danger: #dc2626;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif;
+      font-size: 14px;
+    }
+
+    body {
+      min-width: 1380px;
+    }
+
+    .page {
+      width: 96%;
+      max-width: 1800px;
+      margin: 18px auto;
+    }
+
+    .top-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 18px 20px 16px;
+      margin-bottom: 16px;
+    }
+
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+      color: #0f172a;
+    }
+
+    .title-wrap p {
+      margin: 6px 0 0;
+      color: var(--sub);
+      font-size: 13px;
+    }
+
+    .meta-box {
+      text-align: right;
+      color: var(--sub);
+      font-size: 13px;
+      min-width: 320px;
+    }
+
+    .meta-box strong {
+      color: #0f172a;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: 1fr 110px 110px;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .search-row input {
+      height: 44px;
+      border: 1px solid #c8d2df;
+      border-radius: 10px;
+      padding: 0 14px;
+      font-size: 15px;
+      outline: none;
+      background: #fff;
+    }
+
+    .search-row input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.12);
+    }
+
+    .btn {
+      height: 44px;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .btn-search {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-clear {
+      background: #64748b;
+      color: #fff;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+      color: var(--sub);
+      font-size: 13px;
+      min-height: 24px;
+    }
+
+    .status-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .error {
+      color: var(--danger);
+      font-weight: 700;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 16px;
+      min-height: 760px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .list-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 16px;
+      border-bottom: 1px solid #e7edf5;
+      background: #fcfdff;
+      color: var(--sub);
+      font-size: 13px;
+      min-height: 46px;
+    }
+
+    .list-scroll {
+      overflow-y: auto;
+      height: calc(760px - 52px - 46px - 66px);
+      background: #fcfdff;
+    }
+
+    .list-item {
+      padding: 14px 16px 12px;
+      border-bottom: 1px solid #e8edf4;
+      cursor: pointer;
+      background: #fff;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .list-item:hover {
+      background: var(--hover);
+    }
+
+    .list-item.selected {
+      background: var(--selected);
+      border-left: 4px solid var(--accent);
+      padding-left: 12px;
+    }
+
+    .item-title {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.5;
+      margin-bottom: 8px;
+      color: #0f172a;
+      word-break: break-word;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .chip {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: #334155;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .item-preview {
+      color: #475467;
+      line-height: 1.7;
+      min-height: 46px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .item-footer {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #667085;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .pager {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
+      padding: 14px 12px;
+      border-top: 1px solid #e7edf5;
+      background: #fbfcfe;
+      min-height: 66px;
+      flex-wrap: wrap;
+    }
+
+    .pager-btn {
+      min-width: 40px;
+      height: 36px;
+      padding: 0 12px;
+      border: 1px solid #cad5e2;
+      border-radius: 8px;
+      background: #fff;
+      color: #334155;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pager-btn:hover:not(:disabled) {
+      background: #f3f7ff;
+      border-color: #9dbcf5;
+    }
+
+    .pager-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .pager-btn:disabled {
+      cursor: default;
+      opacity: 0.45;
+      background: #f8fafc;
+    }
+
+    .pager-ellipsis {
+      padding: 0 4px;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+
+    .empty-box {
+      padding: 48px 24px;
+      text-align: center;
+      color: #667085;
+      line-height: 1.8;
+    }
+
+    .detail-scroll {
+      overflow-y: auto;
+      height: calc(760px - 52px);
+      padding: 18px 20px 24px;
+      background: #fff;
+    }
+
+    .detail-title {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.5;
+      margin: 0 0 14px;
+      color: #0f172a;
+      word-break: break-word;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 170px 1fr;
+      gap: 10px 14px;
+      margin-bottom: 22px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #e6ebf2;
+    }
+
+    .detail-label {
+      font-weight: 700;
+      color: #344054;
+      padding-top: 2px;
+    }
+
+    .detail-value {
+      color: #1f2937;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .detail-section {
+      margin-top: 20px;
+    }
+
+    .detail-section h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #0f172a;
+      padding-left: 10px;
+      border-left: 4px solid var(--accent);
+    }
+
+    .detail-box {
+      background: #fbfcff;
+      border: 1px solid #e6ebf2;
+      border-radius: 10px;
+      padding: 14px 16px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 56px;
+    }
+
+    .placeholder {
+      padding: 60px 20px;
+      text-align: center;
+      color: #667085;
+      line-height: 1.9;
+    }
+
+    mark {
+      background: var(--mark);
+      padding: 0 2px;
+      border-radius: 2px;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <section class="top-panel">
+      <div class="title-row">
+        <div class="title-wrap">
+          <h1>情報検索台帳</h1>
+          <p>既存の SharePoint リスト情報を検索・閲覧するための専用画面</p>
+        </div>
+        <div class="meta-box">
+          <div>対象リスト: <strong id="targetListName"></strong></div>
+          <div id="targetListNote"></div>
+        </div>
+      </div>
+
+      <div class="search-row">
+        <input
+          type="text"
+          id="keywordInput"
+          placeholder="キーワードを入力（スペース区切りでAND検索）"
+        />
+        <button class="btn btn-search" id="searchBtn" type="button">検索</button>
+        <button class="btn btn-clear" id="clearBtn" type="button">クリア</button>
+      </div>
+
+      <div class="status-row">
+        <div>
+          表示件数: <strong id="resultCount">0</strong> 件
+        </div>
+        <div class="status-wrap">
+          <span class="status" id="statusText"></span>
+          <span class="error" id="errorText"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="main">
+      <div class="panel">
+        <div class="panel-header">一覧</div>
+
+        <div class="list-toolbar">
+          <div id="pageSummary">0 件</div>
+          <div id="pageInfo">0 / 0 ページ</div>
+        </div>
+
+        <div class="list-scroll" id="listArea"></div>
+
+        <div class="pager" id="pagerArea"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">詳細</div>
+        <div class="detail-scroll" id="detailArea">
+          <div class="placeholder">
+            左の一覧からデータを選択すると、<br />
+            詳細内容がここに表示されます。
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="./js/info-search-ledger.js"></script>
+</body>
+</html>
