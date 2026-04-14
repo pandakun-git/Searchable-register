@@ -1,0 +1,653 @@
+(() => {
+  "use strict";
+
+  const CONFIG = {
+    WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
+    LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
+
+    LIST_LABEL: "人給給与（会計）業務Ｑ＆Ａ",
+    LIST_NOTE: "PW はヘルプデスクへ確認",
+
+    BATCH_SIZE: 500,
+    MAX_FETCH: 5000,
+    PAGE_SIZE: 15,
+
+    DISPLAY_NAMES: {
+      businessCategory: "業務区分",
+      actorCategory: "アクター区分",
+      operatorStaffNo: "職員番号（操作者）",
+      targetStaffNo: "職員番号（該当者）",
+      manualPage: "マニュアルページ",
+      title: "タイトル",
+      body: "本文（個人情報の入力禁止）",
+      directionCategory: "方面等区分",
+      unitName: "部隊等名",
+      rankName: "氏階級",
+      extensionNo: "内線番号",
+      answer: "回答",
+      situation: "状況",
+      batchId: "バッチID"
+    },
+
+    SEARCH_TARGET_KEYS: [
+      "title",
+      "businessCategory",
+      "actorCategory",
+      "operatorStaffNo",
+      "targetStaffNo",
+      "manualPage",
+      "body",
+      "directionCategory",
+      "unitName",
+      "rankName",
+      "extensionNo",
+      "answer",
+      "situation",
+      "batchId"
+    ]
+  };
+
+  const state = {
+    fieldMap: {},
+    allItems: [],
+    filteredItems: [],
+    selectedId: null,
+    keywords: [],
+    currentPage: 1,
+    isTruncated: false
+  };
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    bindEvents();
+    renderStaticMeta();
+    await init();
+  });
+
+  function bindEvents() {
+    const searchBtn = document.getElementById("searchBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const keywordInput = document.getElementById("keywordInput");
+
+    searchBtn.addEventListener("click", applySearch);
+    clearBtn.addEventListener("click", clearSearch);
+
+    keywordInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        applySearch();
+      }
+    });
+  }
+
+  function renderStaticMeta() {
+    document.getElementById("targetListName").textContent = CONFIG.LIST_LABEL;
+    document.getElementById("targetListNote").textContent = CONFIG.LIST_NOTE;
+  }
+
+  async function init() {
+    try {
+      setError("");
+      setStatus("初期読込中...");
+
+      await loadFieldMap();
+      await loadAllItems();
+
+      state.filteredItems = [...state.allItems];
+      state.currentPage = 1;
+      syncSelectedToCurrentPage(true);
+
+      renderAll();
+
+      if (state.isTruncated) {
+        setStatus(`読込完了（${CONFIG.MAX_FETCH}件まで取得）`);
+      } else {
+        setStatus("読込完了");
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("");
+      setError("読込失敗: " + err.message);
+      renderAll();
+    }
+  }
+
+  async function loadFieldMap() {
+    const url = buildFieldsUrl();
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json;odata=verbose"
+      },
+      credentials: "same-origin"
+    });
+
+    if (!res.ok) {
+      throw new Error(`fields API HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const results = data?.d?.results || [];
+    const map = {};
+
+    results
+      .filter((field) => !field.Hidden)
+      .forEach((field) => {
+        if (!map[field.Title]) {
+          map[field.Title] = field.InternalName;
+        }
+      });
+
+    state.fieldMap = map;
+  }
+
+  async function loadAllItems() {
+    const collected = [];
+    let nextUrl = buildItemsUrl();
+
+    while (nextUrl) {
+      const res = await fetch(nextUrl, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json;odata=verbose"
+        },
+        credentials: "same-origin"
+      });
+
+      if (!res.ok) {
+        throw new Error(`items API HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const results = data?.d?.results || [];
+
+      for (const raw of results) {
+        collected.push(normalizeItem(raw));
+
+        if (collected.length >= CONFIG.MAX_FETCH) {
+          state.isTruncated = true;
+          nextUrl = "";
+          break;
+        }
+      }
+
+      if (!state.isTruncated) {
+        nextUrl = data?.d?.__next || "";
+      }
+    }
+
+    state.allItems = collected;
+  }
+
+  function buildFieldsUrl() {
+    const base = `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList(@listUrl)/fields`;
+    return `${base}?@listUrl='${encodeURIComponent(CONFIG.LIST_SERVER_RELATIVE_URL)}'&$select=Title,InternalName,Hidden`;
+  }
+
+  function buildItemsUrl() {
+    const selectNames = ["Id", "Title", "Modified"];
+
+    Object.keys(CONFIG.DISPLAY_NAMES).forEach((key) => {
+      const internalName = getInternalName(key);
+      if (internalName && !selectNames.includes(internalName)) {
+        selectNames.push(internalName);
+      }
+    });
+
+    const base = `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList(@listUrl)/items`;
+    const query = [
+      `@listUrl='${encodeURIComponent(CONFIG.LIST_SERVER_RELATIVE_URL)}'`,
+      `$top=${CONFIG.BATCH_SIZE}`,
+      `$select=${encodeURIComponent(selectNames.join(","))}`,
+      `$orderby=${encodeURIComponent("Modified desc")}`
+    ].join("&");
+
+    return `${base}?${query}`;
+  }
+
+  function getInternalName(key) {
+    if (key === "title") return "Title";
+    if (key === "modified") return "Modified";
+
+    const displayName = CONFIG.DISPLAY_NAMES[key];
+    return state.fieldMap[displayName] || null;
+  }
+
+  function normalizeItem(raw) {
+    const item = {
+      id: raw.Id,
+      modified: raw.Modified || ""
+    };
+
+    Object.keys(CONFIG.DISPLAY_NAMES).forEach((key) => {
+      const internalName = getInternalName(key);
+      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
+    });
+
+    if (!item.title) {
+      item.title = "(タイトルなし)";
+    }
+
+    return item;
+  }
+
+  function normalizeFieldValue(value) {
+    if (value === null || value === undefined) return "";
+
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      return String(value);
+    }
+
+    if (Array.isArray(value?.results)) {
+      return value.results
+        .map((v) => normalizeFieldValue(v))
+        .filter(Boolean)
+        .join(" / ");
+    }
+
+    if (typeof value === "object") {
+      if (value.Url) {
+        return value.Description ? `${value.Description} ${value.Url}` : value.Url;
+      }
+      if (value.Title) {
+        return value.Title;
+      }
+    }
+
+    return "";
+  }
+
+  function applySearch() {
+    const input = document.getElementById("keywordInput").value.trim();
+    const words = input
+      .split(/\s+/)
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+
+    state.keywords = words;
+    state.currentPage = 1;
+
+    if (!words.length) {
+      state.filteredItems = [...state.allItems];
+      syncSelectedToCurrentPage(true);
+      renderAll();
+      setError("");
+      setStatus("全件表示");
+      return;
+    }
+
+    state.filteredItems = state.allItems.filter((item) => {
+      const source = CONFIG.SEARCH_TARGET_KEYS
+        .map((key) => item[key] || "")
+        .join(" ")
+        .toLowerCase();
+
+      return words.every((word) => source.includes(word));
+    });
+
+    syncSelectedToCurrentPage(true);
+    renderAll();
+    setError("");
+    setStatus("検索完了");
+  }
+
+  function clearSearch() {
+    document.getElementById("keywordInput").value = "";
+    state.keywords = [];
+    state.filteredItems = [...state.allItems];
+    state.currentPage = 1;
+    state.selectedId = null;
+
+    syncSelectedToCurrentPage(true);
+    renderAll();
+    setError("");
+    setStatus("検索条件をクリアしました");
+  }
+
+  function renderAll() {
+    renderList();
+    renderPager();
+    renderDetail();
+    renderPageMeta();
+  }
+
+  function renderList() {
+    const listArea = document.getElementById("listArea");
+    const pageItems = getPageItems();
+
+    document.getElementById("resultCount").textContent = state.filteredItems.length;
+
+    if (!state.filteredItems.length) {
+      listArea.innerHTML = `
+        <div class="empty-box">
+          該当する情報はありません。<br />
+          キーワードを変えて再度検索してください。
+        </div>
+      `;
+      return;
+    }
+
+    listArea.innerHTML = pageItems.map((item) => {
+      const selectedClass = item.id === state.selectedId ? "selected" : "";
+      const previewSource = item.body || item.answer || item.manualPage || "";
+      const preview = shorten(previewSource, 90);
+
+      return `
+        <div class="list-item ${selectedClass}" data-id="${item.id}">
+          <div class="item-title">${highlightPlainText(escapeHtml(item.title), state.keywords)}</div>
+
+          <div class="chips">
+            ${item.businessCategory ? `<span class="chip">${escapeHtml(item.businessCategory)}</span>` : ""}
+            ${item.actorCategory ? `<span class="chip">${escapeHtml(item.actorCategory)}</span>` : ""}
+            ${item.situation ? `<span class="chip">${escapeHtml(item.situation)}</span>` : ""}
+          </div>
+
+          <div class="item-preview">
+            ${highlightPlainText(escapeHtml(preview), state.keywords)}
+          </div>
+
+          <div class="item-footer">
+            <span>${item.unitName ? "部隊等名: " + escapeHtml(item.unitName) : ""}</span>
+            <span>更新日: ${formatDate(item.modified)}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    listArea.querySelectorAll(".list-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        state.selectedId = Number(el.dataset.id);
+        renderList();
+        renderDetail();
+      });
+    });
+  }
+
+  function renderPager() {
+    const pagerArea = document.getElementById("pagerArea");
+    const totalPages = getTotalPages();
+
+    if (!state.filteredItems.length || totalPages <= 1) {
+      pagerArea.innerHTML = "";
+      return;
+    }
+
+    const tokens = buildPageTokens(state.currentPage, totalPages);
+
+    const html = [
+      `<button type="button" class="pager-btn" data-page="${state.currentPage - 1}" ${state.currentPage <= 1 ? "disabled" : ""}>前へ</button>`
+    ];
+
+    tokens.forEach((token) => {
+      if (token === "...") {
+        html.push(`<span class="pager-ellipsis">…</span>`);
+        return;
+      }
+
+      const activeClass = token === state.currentPage ? "active" : "";
+      html.push(
+        `<button type="button" class="pager-btn ${activeClass}" data-page="${token}">${token}</button>`
+      );
+    });
+
+    html.push(
+      `<button type="button" class="pager-btn" data-page="${state.currentPage + 1}" ${state.currentPage >= totalPages ? "disabled" : ""}>次へ</button>`
+    );
+
+    pagerArea.innerHTML = html.join("");
+
+    pagerArea.querySelectorAll("button[data-page]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const page = Number(btn.dataset.page);
+        changePage(page);
+      });
+    });
+  }
+
+  function renderPageMeta() {
+    const total = state.filteredItems.length;
+    const totalPages = getTotalPages();
+
+    if (!total) {
+      document.getElementById("pageSummary").textContent = "0 件";
+      document.getElementById("pageInfo").textContent = "0 / 0 ページ";
+      return;
+    }
+
+    const start = (state.currentPage - 1) * CONFIG.PAGE_SIZE + 1;
+    const end = Math.min(start + CONFIG.PAGE_SIZE - 1, total);
+
+    document.getElementById("pageSummary").textContent = `${start} - ${end} / ${total} 件`;
+    document.getElementById("pageInfo").textContent = `${state.currentPage} / ${totalPages} ページ`;
+  }
+
+  function renderDetail() {
+    const detailArea = document.getElementById("detailArea");
+    const item = state.filteredItems.find((x) => x.id === state.selectedId);
+
+    if (!item) {
+      detailArea.innerHTML = `
+        <div class="placeholder">
+          左の一覧からデータを選択すると、<br />
+          詳細内容がここに表示されます。
+        </div>
+      `;
+      return;
+    }
+
+    detailArea.innerHTML = `
+      <h2 class="detail-title">${highlightPlainText(escapeHtml(item.title), state.keywords)}</h2>
+
+      <div class="detail-grid">
+        ${renderGridRow("業務区分", item.businessCategory)}
+        ${renderGridRow("アクター区分", item.actorCategory)}
+        ${renderGridRow("方面等区分", item.directionCategory)}
+        ${renderGridRow("部隊等名", item.unitName)}
+        ${renderGridRow("氏階級", item.rankName)}
+        ${renderGridRow("職員番号（操作者）", item.operatorStaffNo)}
+        ${renderGridRow("職員番号（該当者）", item.targetStaffNo)}
+        ${renderGridRow("内線番号", item.extensionNo)}
+        ${renderGridRow("マニュアルページ", item.manualPage)}
+        ${renderGridRow("状況", item.situation)}
+        ${renderGridRow("バッチID", item.batchId)}
+        ${renderGridRow("更新日", formatDate(item.modified))}
+      </div>
+
+      <div class="detail-section">
+        <h3>本文</h3>
+        <div class="detail-box">${formatRichText(item.body, state.keywords)}</div>
+      </div>
+
+      <div class="detail-section">
+        <h3>回答</h3>
+        <div class="detail-box">${formatRichText(item.answer, state.keywords)}</div>
+      </div>
+    `;
+  }
+
+  function renderGridRow(label, value) {
+    return `
+      <div class="detail-label">${escapeHtml(label)}</div>
+      <div class="detail-value">${formatRichText(value, state.keywords)}</div>
+    `;
+  }
+
+  function changePage(page) {
+    const totalPages = getTotalPages();
+    if (!totalPages) return;
+
+    const nextPage = Math.min(Math.max(page, 1), totalPages);
+    if (nextPage === state.currentPage) return;
+
+    state.currentPage = nextPage;
+    syncSelectedToCurrentPage(false);
+    renderAll();
+  }
+
+  function syncSelectedToCurrentPage(forceFirst) {
+    const pageItems = getPageItems();
+
+    if (!pageItems.length) {
+      state.selectedId = null;
+      return;
+    }
+
+    const existsOnPage = pageItems.some((item) => item.id === state.selectedId);
+
+    if (forceFirst || !existsOnPage) {
+      state.selectedId = pageItems[0].id;
+    }
+  }
+
+  function getPageItems() {
+    if (!state.filteredItems.length) return [];
+
+    const totalPages = getTotalPages();
+    if (state.currentPage > totalPages) {
+      state.currentPage = totalPages;
+    }
+    if (state.currentPage < 1) {
+      state.currentPage = 1;
+    }
+
+    const startIndex = (state.currentPage - 1) * CONFIG.PAGE_SIZE;
+    const endIndex = startIndex + CONFIG.PAGE_SIZE;
+    return state.filteredItems.slice(startIndex, endIndex);
+  }
+
+  function getTotalPages() {
+    if (!state.filteredItems.length) return 0;
+    return Math.ceil(state.filteredItems.length / CONFIG.PAGE_SIZE);
+  }
+
+  function buildPageTokens(current, total) {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    const tokens = [1];
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+
+    if (start > 2) {
+      tokens.push("...");
+    }
+
+    for (let i = start; i <= end; i += 1) {
+      tokens.push(i);
+    }
+
+    if (end < total - 1) {
+      tokens.push("...");
+    }
+
+    tokens.push(total);
+    return tokens;
+  }
+
+  function formatRichText(value, keywords) {
+    const text = String(value || "").trim();
+    if (!text) return "—";
+
+    const parts = splitTextAndUrls(text);
+
+    return parts.map((part) => {
+      if (part.type === "url") {
+        const safeUrl = escapeHtml(part.value);
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`;
+      }
+
+      return highlightPlainText(escapeHtml(part.value), keywords);
+    }).join("");
+  }
+
+  function splitTextAndUrls(text) {
+    const regex = /(https?:\/\/[^\s]+)/gi;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({
+          type: "text",
+          value: text.slice(lastIndex, match.index)
+        });
+      }
+
+      parts.push({
+        type: "url",
+        value: match[0]
+      });
+
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({
+        type: "text",
+        value: text.slice(lastIndex)
+      });
+    }
+
+    return parts;
+  }
+
+  function shorten(text, maxLength) {
+    if (!text) return "";
+    return text.length > maxLength ? `${text.slice(0, maxLength)} ...` : text;
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+
+    return `${y}/${m}/${day} ${hh}:${mm}`;
+  }
+
+  function setStatus(text) {
+    document.getElementById("statusText").textContent = text || "";
+  }
+
+  function setError(text) {
+    document.getElementById("errorText").textContent = text || "";
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function highlightPlainText(escapedText, keywords) {
+    if (!keywords || !keywords.length) {
+      return escapedText;
+    }
+
+    let result = escapedText;
+
+    [...keywords]
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)
+      .forEach((word) => {
+        const re = new RegExp(`(${escapeRegExp(word)})`, "gi");
+        result = result.replace(re, "<mark>$1</mark>");
+      });
+
+    return result;
+  }
+})();
