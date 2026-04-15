@@ -9,68 +9,81 @@
   <pre id="log">開始前</pre>
 
 <script>
-(async () => {
-  const log = document.getElementById("log");
+(function () {
+  var log = document.getElementById("log");
 
   function write(msg) {
     log.textContent += "\n" + msg;
   }
 
-  const WEB_URL = "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei";
-  const LIST_URL = "/cc/jinkyu/kyuyokaikei/Lists/List1";
-
-  async function getJson(url) {
+  function getJson(url, callback) {
     write("アクセス中:");
     write(url);
 
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json;odata=verbose"
-      },
-      credentials: "include"
-    });
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, true);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Accept", "application/json;odata=verbose");
 
-    write("HTTP status: " + res.status);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        write("HTTP status: " + xhr.status);
 
-    const text = await res.text();
+        if (xhr.status >= 200 && xhr.status < 300) {
+          callback(null, JSON.parse(xhr.responseText));
+        } else {
+          write("エラー本文:");
+          write(xhr.responseText.substring(0, 1000));
+          callback(new Error("HTTP " + xhr.status), null);
+        }
+      }
+    };
 
-    if (!res.ok) {
-      write("エラー本文:");
-      write(text.slice(0, 1000));
-      throw new Error("HTTP " + res.status);
-    }
-
-    return JSON.parse(text);
+    xhr.send();
   }
 
   try {
     log.textContent = "JS起動OK";
 
-    const listInfoUrl =
+    var WEB_URL = "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei";
+    var LIST_URL = "/cc/jinkyu/kyuyokaikei/Lists/List1";
+
+    var listInfoUrl =
       WEB_URL + "/_api/web/GetList('" + LIST_URL.replace(/'/g, "''") + "')" +
       "?$select=Title,ItemCount";
 
-    const listInfo = await getJson(listInfoUrl);
+    getJson(listInfoUrl, function (err, data) {
+      if (err) {
+        write("=== ERROR ===");
+        write(err.message);
+        return;
+      }
 
-    write("リスト接続OK");
-    write("リスト名: " + listInfo.d.Title);
-    write("件数: " + listInfo.d.ItemCount);
+      write("リスト接続OK");
+      write("リスト名: " + data.d.Title);
+      write("件数: " + data.d.ItemCount);
 
-    const itemUrl =
-      WEB_URL + "/_api/web/GetList('" + LIST_URL.replace(/'/g, "''") + "')" +
-      "/items?$top=1&$select=Id,Title,Modified";
+      var itemUrl =
+        WEB_URL + "/_api/web/GetList('" + LIST_URL.replace(/'/g, "''") + "')" +
+        "/items?$top=1&$select=Id,Title,Modified";
 
-    const itemData = await getJson(itemUrl);
+      getJson(itemUrl, function (err2, itemData) {
+        if (err2) {
+          write("=== ERROR ===");
+          write(err2.message);
+          return;
+        }
 
-    write("アイテム取得OK");
-    write("取得件数: " + itemData.d.results.length);
+        write("アイテム取得OK");
+        write("取得件数: " + itemData.d.results.length);
 
-    if (itemData.d.results.length > 0) {
-      write("先頭タイトル: " + itemData.d.results[0].Title);
-    }
+        if (itemData.d.results.length > 0) {
+          write("先頭タイトル: " + itemData.d.results[0].Title);
+        }
 
-    write("=== SUCCESS ===");
+        write("=== SUCCESS ===");
+      });
+    });
   } catch (e) {
     write("=== ERROR ===");
     write(e.message);
