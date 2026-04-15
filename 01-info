@@ -1,11 +1,11 @@
-(() => {
+(function () {
   "use strict";
 
-  const CONFIG = {
+  var CONFIG = {
     WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
     LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
 
-    LIST_LABEL: "人給給与（会計）業務Ｑ＆Ａ",
+    LIST_LABEL: "人給給与（会計）業務Q&A",
     LIST_NOTE: "PW はヘルプデスクへ確認",
 
     BATCH_SIZE: 500,
@@ -30,7 +30,7 @@
     }
   };
 
-  const state = {
+  var state = {
     fieldMap: {},
     allItems: [],
     filteredItems: [],
@@ -40,191 +40,329 @@
     isTruncated: false
   };
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    bindEvents();
+  ready(function () {
     renderStaticMeta();
-    await init();
+    bindEvents();
+    init();
   });
 
-  function bindEvents() {
-    document.getElementById("searchBtn").addEventListener("click", applySearch);
-    document.getElementById("clearBtn").addEventListener("click", clearSearch);
-    document.getElementById("keywordInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") applySearch();
-    });
+  function ready(fn) {
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      setTimeout(fn, 0);
+    } else {
+      document.addEventListener("DOMContentLoaded", fn);
+    }
   }
 
   function renderStaticMeta() {
-    document.getElementById("targetListName").textContent = CONFIG.LIST_LABEL;
-    document.getElementById("targetListNote").textContent = CONFIG.LIST_NOTE;
+    document.getElementById("targetListName").innerText = CONFIG.LIST_LABEL;
+    document.getElementById("targetListNote").innerText = CONFIG.LIST_NOTE;
   }
 
-  async function init() {
-    try {
-      setError("");
-      setStatus("初期読込中...");
+  function bindEvents() {
+    document.getElementById("searchBtn").onclick = applySearch;
+    document.getElementById("clearBtn").onclick = clearSearch;
 
-      await loadFieldMap();
-      await loadAllItems();
-
-      state.filteredItems = [...state.allItems];
-      state.currentPage = 1;
-      syncSelectedToCurrentPage(true);
-
-      renderAll();
-      setStatus(state.isTruncated ? `読込完了（${CONFIG.MAX_FETCH}件まで）` : "読込完了");
-    } catch (err) {
-      console.error(err);
-      setStatus("");
-      setError("読込失敗: " + err.message);
-      renderAll();
-    }
+    document.getElementById("keywordInput").onkeydown = function (e) {
+      e = e || window.event;
+      if (e.keyCode === 13) {
+        applySearch();
+      }
+    };
   }
 
-  async function loadFieldMap() {
-    const url =
-      `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList('${escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL)}')/fields` +
-      `?$select=Title,InternalName,Hidden`;
+  function init() {
+    setStatus("初期読込中...");
+    setError("");
 
-    const data = await fetchJson(url);
-    const results = data?.d?.results || [];
+    loadFieldMap(function (err) {
+      if (err) {
+        handleError(err);
+        return;
+      }
 
-    const map = {};
-    results.filter(f => !f.Hidden).forEach(f => {
-      if (!map[f.Title]) map[f.Title] = f.InternalName;
+      loadAllItems(function (err2) {
+        if (err2) {
+          handleError(err2);
+          return;
+        }
+
+        state.filteredItems = state.allItems.slice(0);
+        state.currentPage = 1;
+        syncSelectedToCurrentPage(true);
+        renderAll();
+
+        if (state.isTruncated) {
+          setStatus("読込完了（" + CONFIG.MAX_FETCH + "件まで）");
+        } else {
+          setStatus("読込完了");
+        }
+      });
     });
-
-    state.fieldMap = map;
   }
 
-  async function loadAllItems() {
-    const collected = [];
-    let nextUrl = buildItemsUrl();
+  function handleError(err) {
+    setStatus("");
+    setError("読込失敗: " + err.message);
+    renderAll();
+  }
 
-    while (nextUrl) {
-      const data = await fetchJson(nextUrl);
-      const results = data?.d?.results || [];
+  function loadFieldMap(callback) {
+    var url =
+      CONFIG.WEB_ABSOLUTE_URL +
+      "/_api/web/GetList('" +
+      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
+      "')/fields?$select=Title,InternalName,Hidden";
 
-      for (const raw of results) {
-        collected.push(normalizeItem(raw));
+    getJson(url, function (err, data) {
+      if (err) {
+        callback(err);
+        return;
+      }
 
-        if (collected.length >= CONFIG.MAX_FETCH) {
-          state.isTruncated = true;
-          nextUrl = "";
-          break;
+      var results = data.d && data.d.results ? data.d.results : [];
+      var map = {};
+      var i;
+      var f;
+
+      for (i = 0; i < results.length; i++) {
+        f = results[i];
+        if (!f.Hidden && !map[f.Title]) {
+          map[f.Title] = f.InternalName;
         }
       }
 
-      if (!state.isTruncated) {
-        nextUrl = data?.d?.__next || "";
-      }
-    }
-
-    state.allItems = collected;
+      state.fieldMap = map;
+      callback(null);
+    });
   }
 
-  async function fetchJson(url) {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        Accept: "application/json;odata=verbose"
-      },
-      credentials: "include"
-    });
+  function loadAllItems(callback) {
+    var collected = [];
+    var nextUrl = buildItemsUrl();
 
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    function loadNext() {
+      if (!nextUrl) {
+        state.allItems = collected;
+        callback(null);
+        return;
+      }
+
+      getJson(nextUrl, function (err, data) {
+        if (err) {
+          callback(err);
+          return;
+        }
+
+        var results = data.d && data.d.results ? data.d.results : [];
+        var i;
+
+        for (i = 0; i < results.length; i++) {
+          collected.push(normalizeItem(results[i]));
+
+          if (collected.length >= CONFIG.MAX_FETCH) {
+            state.isTruncated = true;
+            nextUrl = "";
+            break;
+          }
+        }
+
+        if (!state.isTruncated) {
+          nextUrl = data.d && data.d.__next ? data.d.__next : "";
+        }
+
+        loadNext();
+      });
     }
 
-    return await res.json();
+    loadNext();
+  }
+
+  function getJson(url, callback) {
+    var xhr = new XMLHttpRequest();
+
+    xhr.open("GET", url, true);
+
+    if ("withCredentials" in xhr) {
+      xhr.withCredentials = true;
+    }
+
+    xhr.setRequestHeader("Accept", "application/json;odata=verbose");
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4) {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            callback(null, JSON.parse(xhr.responseText));
+          } catch (e) {
+            callback(new Error("JSON解析失敗: " + e.message), null);
+          }
+        } else {
+          callback(new Error("HTTP " + xhr.status + " " + xhr.responseText.substring(0, 120)), null);
+        }
+      }
+    };
+
+    xhr.onerror = function () {
+      callback(new Error("通信エラー"), null);
+    };
+
+    xhr.send();
   }
 
   function buildItemsUrl() {
-    const selectNames = ["Id", "Title", "Modified"];
+    var selectNames = ["Id", "Title", "Modified"];
+    var keys = getDisplayKeys();
+    var i;
+    var key;
+    var internalName;
 
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach(key => {
-      const internalName = getInternalName(key);
-      if (internalName && !selectNames.includes(internalName)) {
+    for (i = 0; i < keys.length; i++) {
+      key = keys[i];
+      internalName = getInternalName(key);
+
+      if (internalName && arrayIndexOf(selectNames, internalName) === -1) {
         selectNames.push(internalName);
       }
-    });
-
-    const select = encodeURIComponent(selectNames.join(","));
-    const orderby = encodeURIComponent("Modified desc");
+    }
 
     return (
-      `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList('${escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL)}')/items` +
-      `?$top=${CONFIG.BATCH_SIZE}` +
-      `&$select=${select}` +
-      `&$orderby=${orderby}`
+      CONFIG.WEB_ABSOLUTE_URL +
+      "/_api/web/GetList('" +
+      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
+      "')/items?$top=" +
+      CONFIG.BATCH_SIZE +
+      "&$select=" +
+      encodeURIComponent(selectNames.join(",")) +
+      "&$orderby=" +
+      encodeURIComponent("Modified desc")
     );
   }
 
-  function getInternalName(key) {
-    if (key === "title") return "Title";
+  function getDisplayKeys() {
+    return [
+      "businessCategory",
+      "actorCategory",
+      "operatorStaffNo",
+      "targetStaffNo",
+      "manualPage",
+      "title",
+      "body",
+      "directionCategory",
+      "unitName",
+      "rankName",
+      "extensionNo",
+      "answer",
+      "situation",
+      "batchId"
+    ];
+  }
 
-    const displayName = CONFIG.DISPLAY_NAMES[key];
+  function getInternalName(key) {
+    var displayName;
+
+    if (key === "title") {
+      return "Title";
+    }
+
+    displayName = CONFIG.DISPLAY_NAMES[key];
     return state.fieldMap[displayName] || null;
   }
 
   function normalizeItem(raw) {
-    const item = {
+    var item = {
       id: raw.Id,
       modified: raw.Modified || ""
     };
 
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach(key => {
-      const internalName = getInternalName(key);
-      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
-    });
+    var keys = getDisplayKeys();
+    var i;
+    var key;
+    var internalName;
 
-    if (!item.title) item.title = "(タイトルなし)";
+    for (i = 0; i < keys.length; i++) {
+      key = keys[i];
+      internalName = getInternalName(key);
+      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
+    }
+
+    if (!item.title) {
+      item.title = "(タイトルなし)";
+    }
+
     return item;
   }
 
   function normalizeFieldValue(value) {
-    if (value === null || value === undefined) return "";
+    var parts;
+    var i;
+    var n;
 
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (value === null || value === undefined) {
+      return "";
+    }
+
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
       return String(value);
     }
 
-    if (Array.isArray(value?.results)) {
-      return value.results.map(v => normalizeFieldValue(v)).filter(Boolean).join(" / ");
+    if (value.results && value.results.length !== undefined) {
+      parts = [];
+
+      for (i = 0; i < value.results.length; i++) {
+        n = normalizeFieldValue(value.results[i]);
+        if (n) {
+          parts.push(n);
+        }
+      }
+
+      return parts.join(" / ");
     }
 
-    if (typeof value === "object") {
-      if (value.Url) return value.Description ? `${value.Description} ${value.Url}` : value.Url;
-      if (value.Title) return value.Title;
+    if (value.Url) {
+      return value.Description ? value.Description + " " + value.Url : value.Url;
+    }
+
+    if (value.Title) {
+      return value.Title;
     }
 
     return "";
   }
 
   function applySearch() {
-    const input = document.getElementById("keywordInput").value.trim();
-    const words = input.split(/\s+/).map(w => w.toLowerCase()).filter(Boolean);
+    var input = document.getElementById("keywordInput").value.replace(/^\s+|\s+$/g, "");
+    var words = splitWords(input);
+    var result = [];
+    var i;
+    var item;
+    var source;
 
     state.keywords = words;
     state.currentPage = 1;
 
     if (!words.length) {
-      state.filteredItems = [...state.allItems];
+      state.filteredItems = state.allItems.slice(0);
       syncSelectedToCurrentPage(true);
       renderAll();
       setStatus("全件表示");
       return;
     }
 
-    state.filteredItems = state.allItems.filter(item => {
-      const source = Object.keys(CONFIG.DISPLAY_NAMES)
-        .map(key => item[key] || "")
-        .join(" ")
-        .toLowerCase();
+    for (i = 0; i < state.allItems.length; i++) {
+      item = state.allItems[i];
+      source = buildSearchSource(item);
 
-      return words.every(word => source.includes(word));
-    });
+      if (matchesAllWords(source, words)) {
+        result.push(item);
+      }
+    }
 
+    state.filteredItems = result;
     syncSelectedToCurrentPage(true);
     renderAll();
     setStatus("検索完了");
@@ -233,7 +371,7 @@
   function clearSearch() {
     document.getElementById("keywordInput").value = "";
     state.keywords = [];
-    state.filteredItems = [...state.allItems];
+    state.filteredItems = state.allItems.slice(0);
     state.currentPage = 1;
     state.selectedId = null;
 
@@ -241,6 +379,46 @@
     renderAll();
     setStatus("検索条件をクリアしました");
     setError("");
+  }
+
+  function splitWords(text) {
+    var raw = text.split(/\s+/);
+    var words = [];
+    var i;
+    var w;
+
+    for (i = 0; i < raw.length; i++) {
+      w = raw[i].replace(/^\s+|\s+$/g, "").toLowerCase();
+      if (w) {
+        words.push(w);
+      }
+    }
+
+    return words;
+  }
+
+  function buildSearchSource(item) {
+    var keys = getDisplayKeys();
+    var arr = [];
+    var i;
+
+    for (i = 0; i < keys.length; i++) {
+      arr.push(item[keys[i]] || "");
+    }
+
+    return arr.join(" ").toLowerCase();
+  }
+
+  function matchesAllWords(source, words) {
+    var i;
+
+    for (i = 0; i < words.length; i++) {
+      if (source.indexOf(words[i]) === -1) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   function renderAll() {
@@ -251,165 +429,201 @@
   }
 
   function renderList() {
-    const listArea = document.getElementById("listArea");
-    const pageItems = getPageItems();
+    var listArea = document.getElementById("listArea");
+    var pageItems = getPageItems();
+    var html = [];
+    var i;
+    var item;
+    var selectedClass;
+    var preview;
 
-    document.getElementById("resultCount").textContent = state.filteredItems.length;
+    document.getElementById("resultCount").innerText = state.filteredItems.length;
 
     if (!state.filteredItems.length) {
-      listArea.innerHTML = `<div class="empty-box">該当する情報はありません。</div>`;
+      listArea.innerHTML = '<div class="empty-box">該当する情報はありません。</div>';
       return;
     }
 
-    listArea.innerHTML = pageItems.map(item => {
-      const selectedClass = item.id === state.selectedId ? "selected" : "";
-      const preview = shorten(item.body || item.answer || item.manualPage || "", 90);
+    for (i = 0; i < pageItems.length; i++) {
+      item = pageItems[i];
+      selectedClass = item.id === state.selectedId ? "selected" : "";
+      preview = shorten(item.body || item.answer || item.manualPage || "", 90);
 
-      return `
-        <div class="list-item ${selectedClass}" data-id="${item.id}">
-          <div class="item-title">${highlight(escapeHtml(item.title), state.keywords)}</div>
+      html.push(
+        '<div class="list-item ' + selectedClass + '" data-id="' + item.id + '">' +
+          '<div class="item-title">' + highlight(escapeHtml(item.title), state.keywords) + '</div>' +
+          '<div class="chips">' +
+            (item.businessCategory ? '<span class="chip">' + escapeHtml(item.businessCategory) + '</span>' : '') +
+            (item.actorCategory ? '<span class="chip">' + escapeHtml(item.actorCategory) + '</span>' : '') +
+            (item.situation ? '<span class="chip">' + escapeHtml(item.situation) + '</span>' : '') +
+          '</div>' +
+          '<div class="item-preview">' + highlight(escapeHtml(preview), state.keywords) + '</div>' +
+          '<div class="item-footer">' +
+            '<span>' + (item.unitName ? "部隊等名: " + escapeHtml(item.unitName) : "") + '</span>' +
+            '<span>更新日: ' + formatDate(item.modified) + '</span>' +
+          '</div>' +
+        '</div>'
+      );
+    }
 
-          <div class="chips">
-            ${item.businessCategory ? `<span class="chip">${escapeHtml(item.businessCategory)}</span>` : ""}
-            ${item.actorCategory ? `<span class="chip">${escapeHtml(item.actorCategory)}</span>` : ""}
-            ${item.situation ? `<span class="chip">${escapeHtml(item.situation)}</span>` : ""}
-          </div>
+    listArea.innerHTML = html.join("");
 
-          <div class="item-preview">${highlight(escapeHtml(preview), state.keywords)}</div>
+    bindListItemClicks();
+  }
 
-          <div class="item-footer">
-            <span>${item.unitName ? "部隊等名: " + escapeHtml(item.unitName) : ""}</span>
-            <span>更新日: ${formatDate(item.modified)}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
+  function bindListItemClicks() {
+    var items = document.getElementById("listArea").getElementsByClassName("list-item");
+    var i;
 
-    listArea.querySelectorAll(".list-item").forEach(el => {
-      el.addEventListener("click", () => {
-        state.selectedId = Number(el.dataset.id);
+    for (i = 0; i < items.length; i++) {
+      items[i].onclick = function () {
+        state.selectedId = Number(this.getAttribute("data-id"));
         renderList();
         renderDetail();
-      });
-    });
+      };
+    }
   }
 
   function renderDetail() {
-    const detailArea = document.getElementById("detailArea");
-    const item = state.filteredItems.find(x => x.id === state.selectedId);
+    var detailArea = document.getElementById("detailArea");
+    var item = findSelectedItem();
 
     if (!item) {
-      detailArea.innerHTML = `
-        <div class="placeholder">
-          左の一覧からデータを選択すると、<br />
-          詳細内容がここに表示されます。
-        </div>
-      `;
+      detailArea.innerHTML =
+        '<div class="placeholder">左の一覧からデータを選択すると、<br>詳細内容がここに表示されます。</div>';
       return;
     }
 
-    detailArea.innerHTML = `
-      <h2 class="detail-title">${highlight(escapeHtml(item.title), state.keywords)}</h2>
-
-      <div class="detail-grid">
-        ${gridRow("業務区分", item.businessCategory)}
-        ${gridRow("アクター区分", item.actorCategory)}
-        ${gridRow("方面等区分", item.directionCategory)}
-        ${gridRow("部隊等名", item.unitName)}
-        ${gridRow("氏階級", item.rankName)}
-        ${gridRow("職員番号（操作者）", item.operatorStaffNo)}
-        ${gridRow("職員番号（該当者）", item.targetStaffNo)}
-        ${gridRow("内線番号", item.extensionNo)}
-        ${gridRow("マニュアルページ", item.manualPage)}
-        ${gridRow("状況", item.situation)}
-        ${gridRow("バッチID", item.batchId)}
-        ${gridRow("更新日", formatDate(item.modified))}
-      </div>
-
-      <div class="detail-section">
-        <h3>本文</h3>
-        <div class="detail-box">${formatContent(item.body)}</div>
-      </div>
-
-      <div class="detail-section">
-        <h3>回答</h3>
-        <div class="detail-box">${formatContent(item.answer)}</div>
-      </div>
-    `;
+    detailArea.innerHTML =
+      '<h2 class="detail-title">' + highlight(escapeHtml(item.title), state.keywords) + '</h2>' +
+      '<div class="detail-grid">' +
+        gridRow("業務区分", item.businessCategory) +
+        gridRow("アクター区分", item.actorCategory) +
+        gridRow("方面等区分", item.directionCategory) +
+        gridRow("部隊等名", item.unitName) +
+        gridRow("氏階級", item.rankName) +
+        gridRow("職員番号（操作者）", item.operatorStaffNo) +
+        gridRow("職員番号（該当者）", item.targetStaffNo) +
+        gridRow("内線番号", item.extensionNo) +
+        gridRow("マニュアルページ", item.manualPage) +
+        gridRow("状況", item.situation) +
+        gridRow("バッチID", item.batchId) +
+        gridRow("更新日", formatDate(item.modified)) +
+      '</div>' +
+      '<div class="detail-section">' +
+        '<h3>本文</h3>' +
+        '<div class="detail-box">' + formatContent(item.body) + '</div>' +
+      '</div>' +
+      '<div class="detail-section">' +
+        '<h3>回答</h3>' +
+        '<div class="detail-box">' + formatContent(item.answer) + '</div>' +
+      '</div>';
   }
 
   function gridRow(label, value) {
-    return `
-      <div class="detail-label">${escapeHtml(label)}</div>
-      <div class="detail-value">${formatContent(value)}</div>
-    `;
+    return (
+      '<div class="detail-label">' + escapeHtml(label) + '</div>' +
+      '<div class="detail-value">' + formatContent(value) + '</div>'
+    );
   }
 
   function formatContent(value) {
-    const text = String(value || "").trim();
-    if (!text) return "—";
+    var text = String(value || "").replace(/^\s+|\s+$/g, "");
+    var safe;
+    var linked;
 
-    const safe = escapeHtml(text);
-    const linked = safe.replace(
+    if (!text) {
+      return "—";
+    }
+
+    safe = escapeHtml(text);
+    linked = safe.replace(
       /(https?:\/\/[^\s<]+)/gi,
-      `<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>`
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
     );
 
     return highlight(linked, state.keywords);
   }
 
   function renderPager() {
-    const pagerArea = document.getElementById("pagerArea");
-    const totalPages = getTotalPages();
+    var pagerArea = document.getElementById("pagerArea");
+    var totalPages = getTotalPages();
+    var tokens;
+    var html = [];
+    var i;
+    var token;
 
     if (!state.filteredItems.length || totalPages <= 1) {
       pagerArea.innerHTML = "";
       return;
     }
 
-    const tokens = buildPageTokens(state.currentPage, totalPages);
-    const html = [];
+    tokens = buildPageTokens(state.currentPage, totalPages);
 
-    html.push(`<button class="pager-btn" data-page="${state.currentPage - 1}" ${state.currentPage <= 1 ? "disabled" : ""}>前へ</button>`);
+    html.push(
+      '<button class="pager-btn" data-page="' + (state.currentPage - 1) + '" ' +
+      (state.currentPage <= 1 ? "disabled" : "") + '>前へ</button>'
+    );
 
-    tokens.forEach(token => {
+    for (i = 0; i < tokens.length; i++) {
+      token = tokens[i];
+
       if (token === "...") {
-        html.push(`<span class="pager-ellipsis">…</span>`);
+        html.push('<span class="pager-ellipsis">…</span>');
       } else {
-        html.push(`<button class="pager-btn ${token === state.currentPage ? "active" : ""}" data-page="${token}">${token}</button>`);
+        html.push(
+          '<button class="pager-btn ' + (token === state.currentPage ? "active" : "") +
+          '" data-page="' + token + '">' + token + '</button>'
+        );
       }
-    });
+    }
 
-    html.push(`<button class="pager-btn" data-page="${state.currentPage + 1}" ${state.currentPage >= totalPages ? "disabled" : ""}>次へ</button>`);
+    html.push(
+      '<button class="pager-btn" data-page="' + (state.currentPage + 1) + '" ' +
+      (state.currentPage >= totalPages ? "disabled" : "") + '>次へ</button>'
+    );
 
     pagerArea.innerHTML = html.join("");
+    bindPagerClicks();
+  }
 
-    pagerArea.querySelectorAll("button[data-page]").forEach(btn => {
-      btn.addEventListener("click", () => changePage(Number(btn.dataset.page)));
-    });
+  function bindPagerClicks() {
+    var buttons = document.getElementById("pagerArea").getElementsByTagName("button");
+    var i;
+
+    for (i = 0; i < buttons.length; i++) {
+      buttons[i].onclick = function () {
+        changePage(Number(this.getAttribute("data-page")));
+      };
+    }
   }
 
   function renderPageMeta() {
-    const total = state.filteredItems.length;
-    const totalPages = getTotalPages();
+    var total = state.filteredItems.length;
+    var totalPages = getTotalPages();
+    var start;
+    var end;
 
     if (!total) {
-      document.getElementById("pageSummary").textContent = "0 件";
-      document.getElementById("pageInfo").textContent = "0 / 0 ページ";
+      document.getElementById("pageSummary").innerText = "0 件";
+      document.getElementById("pageInfo").innerText = "0 / 0 ページ";
       return;
     }
 
-    const start = (state.currentPage - 1) * CONFIG.PAGE_SIZE + 1;
-    const end = Math.min(start + CONFIG.PAGE_SIZE - 1, total);
+    start = (state.currentPage - 1) * CONFIG.PAGE_SIZE + 1;
+    end = Math.min(start + CONFIG.PAGE_SIZE - 1, total);
 
-    document.getElementById("pageSummary").textContent = `${start} - ${end} / ${total} 件`;
-    document.getElementById("pageInfo").textContent = `${state.currentPage} / ${totalPages} ページ`;
+    document.getElementById("pageSummary").innerText = start + " - " + end + " / " + total + " 件";
+    document.getElementById("pageInfo").innerText = state.currentPage + " / " + totalPages + " ページ";
   }
 
   function changePage(page) {
-    const totalPages = getTotalPages();
-    const next = Math.min(Math.max(page, 1), totalPages);
-    if (next === state.currentPage) return;
+    var totalPages = getTotalPages();
+    var next = Math.min(Math.max(page, 1), totalPages);
+
+    if (next === state.currentPage) {
+      return;
+    }
 
     state.currentPage = next;
     syncSelectedToCurrentPage(false);
@@ -417,19 +631,29 @@
   }
 
   function syncSelectedToCurrentPage(forceFirst) {
-    const pageItems = getPageItems();
+    var pageItems = getPageItems();
+    var exists = false;
+    var i;
 
     if (!pageItems.length) {
       state.selectedId = null;
       return;
     }
 
-    const exists = pageItems.some(item => item.id === state.selectedId);
-    if (forceFirst || !exists) state.selectedId = pageItems[0].id;
+    for (i = 0; i < pageItems.length; i++) {
+      if (pageItems[i].id === state.selectedId) {
+        exists = true;
+        break;
+      }
+    }
+
+    if (forceFirst || !exists) {
+      state.selectedId = pageItems[0].id;
+    }
   }
 
   function getPageItems() {
-    const start = (state.currentPage - 1) * CONFIG.PAGE_SIZE;
+    var start = (state.currentPage - 1) * CONFIG.PAGE_SIZE;
     return state.filteredItems.slice(start, start + CONFIG.PAGE_SIZE);
   }
 
@@ -438,44 +662,97 @@
   }
 
   function buildPageTokens(current, total) {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    var tokens = [];
+    var start;
+    var end;
+    var i;
 
-    const tokens = [1];
-    const start = Math.max(2, current - 1);
-    const end = Math.min(total - 1, current + 1);
+    if (total <= 7) {
+      for (i = 1; i <= total; i++) {
+        tokens.push(i);
+      }
+      return tokens;
+    }
 
-    if (start > 2) tokens.push("...");
-    for (let i = start; i <= end; i++) tokens.push(i);
-    if (end < total - 1) tokens.push("...");
+    tokens.push(1);
+
+    start = Math.max(2, current - 1);
+    end = Math.min(total - 1, current + 1);
+
+    if (start > 2) {
+      tokens.push("...");
+    }
+
+    for (i = start; i <= end; i++) {
+      tokens.push(i);
+    }
+
+    if (end < total - 1) {
+      tokens.push("...");
+    }
+
     tokens.push(total);
-
     return tokens;
   }
 
+  function findSelectedItem() {
+    var i;
+
+    for (i = 0; i < state.filteredItems.length; i++) {
+      if (state.filteredItems[i].id === state.selectedId) {
+        return state.filteredItems[i];
+      }
+    }
+
+    return null;
+  }
+
   function shorten(text, max) {
-    if (!text) return "";
-    return text.length > max ? text.slice(0, max) + " ..." : text;
+    text = String(text || "");
+    return text.length > max ? text.substring(0, max) + " ..." : text;
   }
 
   function formatDate(value) {
-    if (!value) return "—";
+    var d;
+    var y;
+    var m;
+    var day;
+    var hh;
+    var mm;
 
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
+    if (!value) {
+      return "—";
+    }
 
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    d = new Date(value);
+
+    if (isNaN(d.getTime())) {
+      return value;
+    }
+
+    y = d.getFullYear();
+    m = pad2(d.getMonth() + 1);
+    day = pad2(d.getDate());
+    hh = pad2(d.getHours());
+    mm = pad2(d.getMinutes());
+
+    return y + "/" + m + "/" + day + " " + hh + ":" + mm;
+  }
+
+  function pad2(n) {
+    return String(n).length === 1 ? "0" + n : String(n);
   }
 
   function setStatus(text) {
-    document.getElementById("statusText").textContent = text || "";
+    document.getElementById("statusText").innerText = text || "";
   }
 
   function setError(text) {
-    document.getElementById("errorText").textContent = text || "";
+    document.getElementById("errorText").innerText = text || "";
   }
 
   function escapeHtml(value) {
-    return String(value ?? "")
+    return String(value === null || value === undefined ? "" : value)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -484,25 +761,45 @@
   }
 
   function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
   function highlight(text, keywords) {
-    if (!keywords || !keywords.length) return text;
+    var result = text;
+    var i;
+    var word;
+    var re;
 
-    let result = text;
+    if (!keywords || !keywords.length) {
+      return result;
+    }
 
-    [...keywords]
-      .sort((a, b) => b.length - a.length)
-      .forEach(word => {
-        const re = new RegExp(`(${escapeRegExp(word)})`, "gi");
-        result = result.replace(re, "<mark>$1</mark>");
-      });
+    keywords = keywords.slice(0).sort(function (a, b) {
+      return b.length - a.length;
+    });
+
+    for (i = 0; i < keywords.length; i++) {
+      word = keywords[i];
+      re = new RegExp("(" + escapeRegExp(word) + ")", "gi");
+      result = result.replace(re, "<mark>$1</mark>");
+    }
 
     return result;
   }
 
   function escapeODataString(value) {
     return String(value).replace(/'/g, "''");
+  }
+
+  function arrayIndexOf(arr, value) {
+    var i;
+
+    for (i = 0; i < arr.length; i++) {
+      if (arr[i] === value) {
+        return i;
+      }
+    }
+
+    return -1;
   }
 })();
