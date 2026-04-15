@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <title>情報検索台帳</title>
 
   <style>
@@ -16,122 +16,74 @@
     * { box-sizing:border-box; }
 
     html,body {
-      margin:0;
-      padding:0;
-      background:var(--bg);
-      color:var(--text);
+      margin:0; padding:0; background:var(--bg); color:var(--text);
       font-family:"Yu Gothic UI","Yu Gothic","Meiryo",sans-serif;
       font-size:14px;
     }
 
     body { min-width:1380px; }
 
-    .page {
-      width:96%;
-      max-width:1800px;
-      margin:18px auto;
-    }
+    .page { width:96%; max-width:1800px; margin:18px auto; }
 
     .top-panel,.panel {
-      background:var(--panel);
-      border:1px solid var(--line);
-      border-radius:14px;
-      box-shadow:var(--shadow);
+      background:var(--panel); border:1px solid var(--line);
+      border-radius:14px; box-shadow:var(--shadow);
     }
 
-    .top-panel {
-      padding:18px 20px 16px;
-      margin-bottom:16px;
-    }
+    .top-panel { padding:18px 20px 16px; margin-bottom:16px; }
 
     .title-row {
-      display:flex;
-      justify-content:space-between;
-      align-items:end;
-      gap:16px;
-      margin-bottom:14px;
+      display:flex; justify-content:space-between; align-items:end;
+      gap:16px; margin-bottom:14px;
     }
 
-    h1 {
-      margin:0;
-      font-size:28px;
-      color:#0f172a;
-    }
+    h1 { margin:0; font-size:28px; color:#0f172a; }
 
-    .title-wrap p {
-      margin:6px 0 0;
-      color:var(--sub);
-      font-size:13px;
-    }
+    .title-wrap p { margin:6px 0 0; color:var(--sub); font-size:13px; }
 
-    .meta-box {
-      text-align:right;
-      color:var(--sub);
-      font-size:13px;
-    }
+    .meta-box { text-align:right; color:var(--sub); font-size:13px; }
 
     .search-row {
-      display:grid;
-      grid-template-columns:1fr 110px 110px;
-      gap:10px;
+      display:grid; grid-template-columns:1fr 110px 110px; gap:10px;
     }
 
     .search-row input {
-      height:44px;
-      border:1px solid #c8d2df;
-      border-radius:10px;
-      padding:0 14px;
-      font-size:15px;
+      height:44px; border:1px solid #c8d2df; border-radius:10px;
+      padding:0 14px; font-size:15px;
     }
 
     .btn {
-      height:44px;
-      border:none;
-      border-radius:10px;
-      font-weight:700;
-      cursor:pointer;
+      height:44px; border:none; border-radius:10px;
+      font-weight:700; cursor:pointer;
     }
 
     .btn-search { background:var(--accent); color:#fff; }
     .btn-clear { background:#64748b; color:#fff; }
 
     .status-row {
-      display:flex;
-      justify-content:space-between;
-      margin-top:10px;
-      color:var(--sub);
-      font-size:13px;
-      min-height:24px;
+      display:flex; justify-content:space-between; margin-top:10px;
+      color:var(--sub); font-size:13px; min-height:24px;
     }
 
     .status { color:var(--accent); font-weight:700; }
     .error { color:var(--danger); font-weight:700; }
 
     .main {
-      display:grid;
-      grid-template-columns:560px 1fr;
-      gap:16px;
+      display:grid; grid-template-columns:560px 1fr; gap:16px;
       min-height:760px;
     }
 
     .panel { overflow:hidden; }
 
     .panel-header {
-      padding:14px 16px;
-      border-bottom:1px solid var(--line);
-      background:#fbfcfe;
-      font-weight:700;
-      color:#0f172a;
+      padding:14px 16px; border-bottom:1px solid var(--line);
+      background:#fbfcfe; font-weight:700; color:#0f172a;
     }
 
     .list-toolbar {
-      display:flex;
-      justify-content:space-between;
-      padding:10px 16px;
-      border-bottom:1px solid #e7edf5;
-      background:#fcfdff;
-      color:var(--sub);
-      font-size:13px;
+      display:flex; justify-content:space-between; padding:10px 16px;
+      border-bottom:1px solid #e7edf5; background:#fcfdff;
+      color:var(--sub); font-size:13px;
     }
 
     .list-scroll {
@@ -141,167 +93,98 @@
     }
 
     .list-item {
-      padding:14px 16px 12px;
-      border-bottom:1px solid #e8edf4;
-      cursor:pointer;
-      background:#fff;
+      padding:14px 16px 12px; border-bottom:1px solid #e8edf4;
+      cursor:pointer; background:#fff;
     }
 
     .list-item:hover { background:var(--hover); }
 
     .list-item.selected {
-      background:var(--selected);
-      border-left:4px solid var(--accent);
+      background:var(--selected); border-left:4px solid var(--accent);
       padding-left:12px;
     }
 
     .item-title {
-      font-size:16px;
-      font-weight:700;
-      margin-bottom:8px;
-      color:#0f172a;
-      word-break:break-word;
+      font-size:16px; font-weight:700; margin-bottom:8px;
+      color:#0f172a; word-break:break-word;
     }
 
-    .chips {
-      display:flex;
-      flex-wrap:wrap;
-      gap:6px;
-      margin-bottom:8px;
-    }
+    .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
 
     .chip {
-      padding:3px 9px;
-      border-radius:999px;
-      background:#eef2f7;
-      color:#334155;
-      font-size:12px;
+      padding:3px 9px; border-radius:999px; background:#eef2f7;
+      color:#334155; font-size:12px;
     }
 
     .item-preview {
-      color:#475467;
-      line-height:1.7;
-      white-space:pre-wrap;
+      color:#475467; line-height:1.7; white-space:pre-wrap;
       word-break:break-word;
     }
 
     .item-footer {
-      margin-top:10px;
-      font-size:12px;
-      color:#667085;
-      display:flex;
-      justify-content:space-between;
-      gap:12px;
+      margin-top:10px; font-size:12px; color:#667085;
+      display:flex; justify-content:space-between; gap:12px;
     }
 
     .pager {
-      display:flex;
-      justify-content:center;
-      align-items:center;
-      gap:6px;
-      padding:14px 12px;
-      border-top:1px solid #e7edf5;
-      background:#fbfcfe;
-      min-height:66px;
+      display:flex; justify-content:center; align-items:center; gap:6px;
+      padding:14px 12px; border-top:1px solid #e7edf5;
+      background:#fbfcfe; min-height:66px;
     }
 
     .pager-btn {
-      min-width:40px;
-      height:36px;
-      padding:0 12px;
-      border:1px solid #cad5e2;
-      border-radius:8px;
-      background:#fff;
-      cursor:pointer;
-      font-weight:700;
+      min-width:40px; height:36px; padding:0 12px;
+      border:1px solid #cad5e2; border-radius:8px; background:#fff;
+      cursor:pointer; font-weight:700;
     }
 
     .pager-btn.active {
-      background:var(--accent);
-      border-color:var(--accent);
-      color:#fff;
+      background:var(--accent); border-color:var(--accent); color:#fff;
     }
 
-    .pager-btn:disabled {
-      opacity:.45;
-      cursor:default;
-    }
+    .pager-btn:disabled { opacity:.45; cursor:default; }
 
-    .pager-ellipsis {
-      color:#94a3b8;
-      font-weight:700;
-    }
+    .pager-ellipsis { color:#94a3b8; font-weight:700; }
 
     .detail-scroll {
-      overflow-y:auto;
-      height:calc(760px - 52px);
-      padding:18px 20px 24px;
+      overflow-y:auto; height:calc(760px - 52px); padding:18px 20px 24px;
     }
 
     .detail-title {
-      font-size:24px;
-      margin:0 0 14px;
-      color:#0f172a;
-      word-break:break-word;
+      font-size:24px; margin:0 0 14px; color:#0f172a; word-break:break-word;
     }
 
     .detail-grid {
-      display:grid;
-      grid-template-columns:170px 1fr;
-      gap:10px 14px;
-      margin-bottom:22px;
-      padding-bottom:20px;
-      border-bottom:1px solid #e6ebf2;
+      display:grid; grid-template-columns:170px 1fr; gap:10px 14px;
+      margin-bottom:22px; padding-bottom:20px; border-bottom:1px solid #e6ebf2;
     }
 
-    .detail-label {
-      font-weight:700;
-      color:#344054;
-    }
+    .detail-label { font-weight:700; color:#344054; }
 
     .detail-value {
-      line-height:1.8;
-      white-space:pre-wrap;
-      word-break:break-word;
+      line-height:1.8; white-space:pre-wrap; word-break:break-word;
     }
 
     .detail-section { margin-top:20px; }
 
     .detail-section h3 {
-      margin:0 0 10px;
-      font-size:16px;
-      padding-left:10px;
+      margin:0 0 10px; font-size:16px; padding-left:10px;
       border-left:4px solid var(--accent);
     }
 
     .detail-box {
-      background:#fbfcff;
-      border:1px solid #e6ebf2;
-      border-radius:10px;
-      padding:14px 16px;
-      line-height:1.8;
-      white-space:pre-wrap;
-      word-break:break-word;
-      min-height:56px;
+      background:#fbfcff; border:1px solid #e6ebf2; border-radius:10px;
+      padding:14px 16px; line-height:1.8; white-space:pre-wrap;
+      word-break:break-word; min-height:56px;
     }
 
     .empty-box,.placeholder {
-      padding:60px 20px;
-      text-align:center;
-      color:#667085;
-      line-height:1.9;
+      padding:60px 20px; text-align:center; color:#667085; line-height:1.9;
     }
 
-    mark {
-      background:var(--mark);
-      padding:0 2px;
-      border-radius:2px;
-    }
+    mark { background:var(--mark); padding:0 2px; border-radius:2px; }
 
-    a {
-      color:var(--accent);
-      text-decoration:underline;
-    }
+    a { color:var(--accent); text-decoration:underline; }
   </style>
 </head>
 
@@ -320,7 +203,7 @@
       </div>
 
       <div class="search-row">
-        <input id="keywordInput" type="text" placeholder="キーワードを入力（スペース区切りでAND検索）" />
+        <input id="keywordInput" type="text" placeholder="キーワードを入力（スペース区切りでAND検索）">
         <button class="btn btn-search" id="searchBtn" type="button">検索</button>
         <button class="btn btn-clear" id="clearBtn" type="button">クリア</button>
       </div>
@@ -349,7 +232,7 @@
         <div class="panel-header">詳細</div>
         <div class="detail-scroll" id="detailArea">
           <div class="placeholder">
-            左の一覧からデータを選択すると、<br />
+            左の一覧からデータを選択すると、<br>
             詳細内容がここに表示されます。
           </div>
         </div>
@@ -357,512 +240,6 @@
     </section>
   </div>
 
-<script>
-(() => {
-  "use strict";
-
-  const CONFIG = {
-    WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
-    LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
-
-    LIST_LABEL: "人給給与（会計）業務Q&A",
-    LIST_NOTE: "PW はヘルプデスクへ確認",
-
-    BATCH_SIZE: 500,
-    MAX_FETCH: 5000,
-    PAGE_SIZE: 15,
-
-    DISPLAY_NAMES: {
-      businessCategory: "業務区分",
-      actorCategory: "アクター区分",
-      operatorStaffNo: "職員番号（操作者）",
-      targetStaffNo: "職員番号（該当者）",
-      manualPage: "マニュアルページ",
-      title: "タイトル",
-      body: "本文（個人情報の入力禁止）",
-      directionCategory: "方面等区分",
-      unitName: "部隊等名",
-      rankName: "氏階級",
-      extensionNo: "内線番号",
-      answer: "回答",
-      situation: "状況",
-      batchId: "バッチID"
-    }
-  };
-
-  const state = {
-    fieldMap: {},
-    allItems: [],
-    filteredItems: [],
-    selectedId: null,
-    keywords: [],
-    currentPage: 1,
-    isTruncated: false
-  };
-
-  document.addEventListener("DOMContentLoaded", async () => {
-    renderStaticMeta();
-    bindEvents();
-    await init();
-  });
-
-  function renderStaticMeta() {
-    document.getElementById("targetListName").textContent = CONFIG.LIST_LABEL;
-    document.getElementById("targetListNote").textContent = CONFIG.LIST_NOTE;
-  }
-
-  function bindEvents() {
-    document.getElementById("searchBtn").addEventListener("click", applySearch);
-    document.getElementById("clearBtn").addEventListener("click", clearSearch);
-    document.getElementById("keywordInput").addEventListener("keydown", e => {
-      if (e.key === "Enter") applySearch();
-    });
-  }
-
-  async function init() {
-    try {
-      setStatus("初期読込中...");
-      setError("");
-
-      await loadFieldMap();
-      await loadAllItems();
-
-      state.filteredItems = [...state.allItems];
-      state.currentPage = 1;
-      syncSelectedToCurrentPage(true);
-      renderAll();
-
-      setStatus(state.isTruncated ? `読込完了（${CONFIG.MAX_FETCH}件まで）` : "読込完了");
-    } catch (err) {
-      console.error(err);
-      setStatus("");
-      setError("読込失敗: " + err.message);
-      renderAll();
-    }
-  }
-
-  async function loadFieldMap() {
-    const url =
-      `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList('${escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL)}')/fields` +
-      `?$select=Title,InternalName,Hidden`;
-
-    const data = await fetchJson(url);
-    const results = data?.d?.results || [];
-
-    const map = {};
-    results.filter(f => !f.Hidden).forEach(f => {
-      if (!map[f.Title]) map[f.Title] = f.InternalName;
-    });
-
-    state.fieldMap = map;
-  }
-
-  async function loadAllItems() {
-    const collected = [];
-    let nextUrl = buildItemsUrl();
-
-    while (nextUrl) {
-      const data = await fetchJson(nextUrl);
-      const results = data?.d?.results || [];
-
-      for (const raw of results) {
-        collected.push(normalizeItem(raw));
-
-        if (collected.length >= CONFIG.MAX_FETCH) {
-          state.isTruncated = true;
-          nextUrl = "";
-          break;
-        }
-      }
-
-      if (!state.isTruncated) {
-        nextUrl = data?.d?.__next || "";
-      }
-    }
-
-    state.allItems = collected;
-  }
-
-  async function fetchJson(url) {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json;odata=verbose"
-      },
-      credentials: "include"
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status} ${text.slice(0, 120)}`);
-    }
-
-    return await res.json();
-  }
-
-  function buildItemsUrl() {
-    const selectNames = ["Id", "Title", "Modified"];
-
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach(key => {
-      const internalName = getInternalName(key);
-      if (internalName && !selectNames.includes(internalName)) {
-        selectNames.push(internalName);
-      }
-    });
-
-    return (
-      `${CONFIG.WEB_ABSOLUTE_URL}/_api/web/GetList('${escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL)}')/items` +
-      `?$top=${CONFIG.BATCH_SIZE}` +
-      `&$select=${encodeURIComponent(selectNames.join(","))}` +
-      `&$orderby=${encodeURIComponent("Modified desc")}`
-    );
-  }
-
-  function getInternalName(key) {
-    if (key === "title") return "Title";
-    const displayName = CONFIG.DISPLAY_NAMES[key];
-    return state.fieldMap[displayName] || null;
-  }
-
-  function normalizeItem(raw) {
-    const item = {
-      id: raw.Id,
-      modified: raw.Modified || ""
-    };
-
-    Object.keys(CONFIG.DISPLAY_NAMES).forEach(key => {
-      const internalName = getInternalName(key);
-      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
-    });
-
-    if (!item.title) item.title = "(タイトルなし)";
-    return item;
-  }
-
-  function normalizeFieldValue(value) {
-    if (value === null || value === undefined) return "";
-
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      return String(value);
-    }
-
-    if (Array.isArray(value?.results)) {
-      return value.results.map(v => normalizeFieldValue(v)).filter(Boolean).join(" / ");
-    }
-
-    if (typeof value === "object") {
-      if (value.Url) return value.Description ? `${value.Description} ${value.Url}` : value.Url;
-      if (value.Title) return value.Title;
-    }
-
-    return "";
-  }
-
-  function applySearch() {
-    const input = document.getElementById("keywordInput").value.trim();
-    const words = input.split(/\s+/).map(w => w.toLowerCase()).filter(Boolean);
-
-    state.keywords = words;
-    state.currentPage = 1;
-
-    if (!words.length) {
-      state.filteredItems = [...state.allItems];
-      syncSelectedToCurrentPage(true);
-      renderAll();
-      setStatus("全件表示");
-      return;
-    }
-
-    state.filteredItems = state.allItems.filter(item => {
-      const source = Object.keys(CONFIG.DISPLAY_NAMES)
-        .map(key => item[key] || "")
-        .join(" ")
-        .toLowerCase();
-
-      return words.every(word => source.includes(word));
-    });
-
-    syncSelectedToCurrentPage(true);
-    renderAll();
-    setStatus("検索完了");
-  }
-
-  function clearSearch() {
-    document.getElementById("keywordInput").value = "";
-    state.keywords = [];
-    state.filteredItems = [...state.allItems];
-    state.currentPage = 1;
-    state.selectedId = null;
-
-    syncSelectedToCurrentPage(true);
-    renderAll();
-    setStatus("検索条件をクリアしました");
-    setError("");
-  }
-
-  function renderAll() {
-    renderList();
-    renderPager();
-    renderDetail();
-    renderPageMeta();
-  }
-
-  function renderList() {
-    const listArea = document.getElementById("listArea");
-    const pageItems = getPageItems();
-
-    document.getElementById("resultCount").textContent = state.filteredItems.length;
-
-    if (!state.filteredItems.length) {
-      listArea.innerHTML = `<div class="empty-box">該当する情報はありません。</div>`;
-      return;
-    }
-
-    listArea.innerHTML = pageItems.map(item => {
-      const selectedClass = item.id === state.selectedId ? "selected" : "";
-      const preview = shorten(item.body || item.answer || item.manualPage || "", 90);
-
-      return `
-        <div class="list-item ${selectedClass}" data-id="${item.id}">
-          <div class="item-title">${highlight(escapeHtml(item.title), state.keywords)}</div>
-
-          <div class="chips">
-            ${item.businessCategory ? `<span class="chip">${escapeHtml(item.businessCategory)}</span>` : ""}
-            ${item.actorCategory ? `<span class="chip">${escapeHtml(item.actorCategory)}</span>` : ""}
-            ${item.situation ? `<span class="chip">${escapeHtml(item.situation)}</span>` : ""}
-          </div>
-
-          <div class="item-preview">${highlight(escapeHtml(preview), state.keywords)}</div>
-
-          <div class="item-footer">
-            <span>${item.unitName ? "部隊等名: " + escapeHtml(item.unitName) : ""}</span>
-            <span>更新日: ${formatDate(item.modified)}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    listArea.querySelectorAll(".list-item").forEach(el => {
-      el.addEventListener("click", () => {
-        state.selectedId = Number(el.dataset.id);
-        renderList();
-        renderDetail();
-      });
-    });
-  }
-
-  function renderDetail() {
-    const detailArea = document.getElementById("detailArea");
-    const item = state.filteredItems.find(x => x.id === state.selectedId);
-
-    if (!item) {
-      detailArea.innerHTML = `
-        <div class="placeholder">
-          左の一覧からデータを選択すると、<br>
-          詳細内容がここに表示されます。
-        </div>
-      `;
-      return;
-    }
-
-    detailArea.innerHTML = `
-      <h2 class="detail-title">${highlight(escapeHtml(item.title), state.keywords)}</h2>
-
-      <div class="detail-grid">
-        ${gridRow("業務区分", item.businessCategory)}
-        ${gridRow("アクター区分", item.actorCategory)}
-        ${gridRow("方面等区分", item.directionCategory)}
-        ${gridRow("部隊等名", item.unitName)}
-        ${gridRow("氏階級", item.rankName)}
-        ${gridRow("職員番号（操作者）", item.operatorStaffNo)}
-        ${gridRow("職員番号（該当者）", item.targetStaffNo)}
-        ${gridRow("内線番号", item.extensionNo)}
-        ${gridRow("マニュアルページ", item.manualPage)}
-        ${gridRow("状況", item.situation)}
-        ${gridRow("バッチID", item.batchId)}
-        ${gridRow("更新日", formatDate(item.modified))}
-      </div>
-
-      <div class="detail-section">
-        <h3>本文</h3>
-        <div class="detail-box">${formatContent(item.body)}</div>
-      </div>
-
-      <div class="detail-section">
-        <h3>回答</h3>
-        <div class="detail-box">${formatContent(item.answer)}</div>
-      </div>
-    `;
-  }
-
-  function gridRow(label, value) {
-    return `
-      <div class="detail-label">${escapeHtml(label)}</div>
-      <div class="detail-value">${formatContent(value)}</div>
-    `;
-  }
-
-  function formatContent(value) {
-    const text = String(value || "").trim();
-    if (!text) return "—";
-
-    const safe = escapeHtml(text);
-    const linked = safe.replace(
-      /(https?:\/\/[^\s<]+)/gi,
-      `<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>`
-    );
-
-    return highlight(linked, state.keywords);
-  }
-
-  function renderPager() {
-    const pagerArea = document.getElementById("pagerArea");
-    const totalPages = getTotalPages();
-
-    if (!state.filteredItems.length || totalPages <= 1) {
-      pagerArea.innerHTML = "";
-      return;
-    }
-
-    const tokens = buildPageTokens(state.currentPage, totalPages);
-    const html = [];
-
-    html.push(`<button class="pager-btn" data-page="${state.currentPage - 1}" ${state.currentPage <= 1 ? "disabled" : ""}>前へ</button>`);
-
-    tokens.forEach(token => {
-      if (token === "...") {
-        html.push(`<span class="pager-ellipsis">…</span>`);
-      } else {
-        html.push(`<button class="pager-btn ${token === state.currentPage ? "active" : ""}" data-page="${token}">${token}</button>`);
-      }
-    });
-
-    html.push(`<button class="pager-btn" data-page="${state.currentPage + 1}" ${state.currentPage >= totalPages ? "disabled" : ""}>次へ</button>`);
-
-    pagerArea.innerHTML = html.join("");
-
-    pagerArea.querySelectorAll("button[data-page]").forEach(btn => {
-      btn.addEventListener("click", () => changePage(Number(btn.dataset.page)));
-    });
-  }
-
-  function renderPageMeta() {
-    const total = state.filteredItems.length;
-    const totalPages = getTotalPages();
-
-    if (!total) {
-      document.getElementById("pageSummary").textContent = "0 件";
-      document.getElementById("pageInfo").textContent = "0 / 0 ページ";
-      return;
-    }
-
-    const start = (state.currentPage - 1) * CONFIG.PAGE_SIZE + 1;
-    const end = Math.min(start + CONFIG.PAGE_SIZE - 1, total);
-
-    document.getElementById("pageSummary").textContent = `${start} - ${end} / ${total} 件`;
-    document.getElementById("pageInfo").textContent = `${state.currentPage} / ${totalPages} ページ`;
-  }
-
-  function changePage(page) {
-    const totalPages = getTotalPages();
-    const next = Math.min(Math.max(page, 1), totalPages);
-    if (next === state.currentPage) return;
-
-    state.currentPage = next;
-    syncSelectedToCurrentPage(false);
-    renderAll();
-  }
-
-  function syncSelectedToCurrentPage(forceFirst) {
-    const pageItems = getPageItems();
-
-    if (!pageItems.length) {
-      state.selectedId = null;
-      return;
-    }
-
-    const exists = pageItems.some(item => item.id === state.selectedId);
-    if (forceFirst || !exists) state.selectedId = pageItems[0].id;
-  }
-
-  function getPageItems() {
-    const start = (state.currentPage - 1) * CONFIG.PAGE_SIZE;
-    return state.filteredItems.slice(start, start + CONFIG.PAGE_SIZE);
-  }
-
-  function getTotalPages() {
-    return state.filteredItems.length ? Math.ceil(state.filteredItems.length / CONFIG.PAGE_SIZE) : 0;
-  }
-
-  function buildPageTokens(current, total) {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-
-    const tokens = [1];
-    const start = Math.max(2, current - 1);
-    const end = Math.min(total - 1, current + 1);
-
-    if (start > 2) tokens.push("...");
-    for (let i = start; i <= end; i++) tokens.push(i);
-    if (end < total - 1) tokens.push("...");
-    tokens.push(total);
-
-    return tokens;
-  }
-
-  function shorten(text, max) {
-    if (!text) return "";
-    return text.length > max ? text.slice(0, max) + " ..." : text;
-  }
-
-  function formatDate(value) {
-    if (!value) return "—";
-
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return value;
-
-    return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-
-  function setStatus(text) {
-    document.getElementById("statusText").textContent = text || "";
-  }
-
-  function setError(text) {
-    document.getElementById("errorText").textContent = text || "";
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  function highlight(text, keywords) {
-    if (!keywords || !keywords.length) return text;
-
-    let result = text;
-
-    [...keywords]
-      .sort((a, b) => b.length - a.length)
-      .forEach(word => {
-        const re = new RegExp(`(${escapeRegExp(word)})`, "gi");
-        result = result.replace(re, "<mark>$1</mark>");
-      });
-
-    return result;
-  }
-
-  function escapeODataString(value) {
-    return String(value).replace(/'/g, "''");
-  }
-})();
-</script>
+  <script src="./01-info.js?v=es5-1"></script>
 </body>
 </html>
