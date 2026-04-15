@@ -3,8 +3,11 @@
 
   var CONFIG = {
     WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
-    LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
 
+    // リスト設定画面に表示されている名前と完全一致させる
+    LIST_TITLE: "人給給与（会計）業務Ｑ＆Ａ（ＰＷはヘルプデスクへ確認）",
+
+    // 画面表示用
     LIST_LABEL: "人給給与（会計）業務Q&A",
     LIST_NOTE: "PW はヘルプデスクへ確認",
 
@@ -92,11 +95,7 @@
         syncSelectedToCurrentPage(true);
         renderAll();
 
-        if (state.isTruncated) {
-          setStatus("読込完了（" + CONFIG.MAX_FETCH + "件まで）");
-        } else {
-          setStatus("読込完了");
-        }
+        setStatus(state.isTruncated ? "読込完了（" + CONFIG.MAX_FETCH + "件まで）" : "読込完了");
       });
     });
   }
@@ -110,20 +109,20 @@
   function loadFieldMap(callback) {
     var url =
       CONFIG.WEB_ABSOLUTE_URL +
-      "/_api/web/GetList('" +
-      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
+      "/_api/web/lists/getbytitle('" +
+      escapeODataString(CONFIG.LIST_TITLE) +
       "')/fields?$select=Title,InternalName,Hidden";
 
     getJson(url, function (err, data) {
+      var results, map, i, f;
+
       if (err) {
         callback(err);
         return;
       }
 
-      var results = data.d && data.d.results ? data.d.results : [];
-      var map = {};
-      var i;
-      var f;
+      results = data.d && data.d.results ? data.d.results : [];
+      map = {};
 
       for (i = 0; i < results.length; i++) {
         f = results[i];
@@ -142,20 +141,15 @@
     var nextUrl = buildItemsUrl();
 
     function loadNext() {
-      if (!nextUrl) {
-        state.allItems = collected;
-        callback(null);
-        return;
-      }
-
       getJson(nextUrl, function (err, data) {
+        var results, i;
+
         if (err) {
           callback(err);
           return;
         }
 
-        var results = data.d && data.d.results ? data.d.results : [];
-        var i;
+        results = data.d && data.d.results ? data.d.results : [];
 
         for (i = 0; i < results.length; i++) {
           collected.push(normalizeItem(results[i]));
@@ -171,7 +165,12 @@
           nextUrl = data.d && data.d.__next ? data.d.__next : "";
         }
 
-        loadNext();
+        if (nextUrl) {
+          loadNext();
+        } else {
+          state.allItems = collected;
+          callback(null);
+        }
       });
     }
 
@@ -198,7 +197,14 @@
             callback(new Error("JSON解析失敗: " + e.message), null);
           }
         } else {
-          callback(new Error("HTTP " + xhr.status + " " + xhr.responseText.substring(0, 120)), null);
+          callback(
+            new Error(
+              "HTTP " + xhr.status +
+              " / URL: " + url +
+              " / RESPONSE: " + xhr.responseText.substring(0, 300)
+            ),
+            null
+          );
         }
       }
     };
@@ -213,9 +219,7 @@
   function buildItemsUrl() {
     var selectNames = ["Id", "Title", "Modified"];
     var keys = getDisplayKeys();
-    var i;
-    var key;
-    var internalName;
+    var i, key, internalName;
 
     for (i = 0; i < keys.length; i++) {
       key = keys[i];
@@ -228,14 +232,12 @@
 
     return (
       CONFIG.WEB_ABSOLUTE_URL +
-      "/_api/web/GetList('" +
-      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
+      "/_api/web/lists/getbytitle('" +
+      escapeODataString(CONFIG.LIST_TITLE) +
       "')/items?$top=" +
       CONFIG.BATCH_SIZE +
       "&$select=" +
-      encodeURIComponent(selectNames.join(",")) +
-      "&$orderby=" +
-      encodeURIComponent("Modified desc")
+      selectNames.join(",")
     );
   }
 
@@ -259,14 +261,11 @@
   }
 
   function getInternalName(key) {
-    var displayName;
-
     if (key === "title") {
       return "Title";
     }
 
-    displayName = CONFIG.DISPLAY_NAMES[key];
-    return state.fieldMap[displayName] || null;
+    return state.fieldMap[CONFIG.DISPLAY_NAMES[key]] || null;
   }
 
   function normalizeItem(raw) {
@@ -276,9 +275,7 @@
     };
 
     var keys = getDisplayKeys();
-    var i;
-    var key;
-    var internalName;
+    var i, key, internalName;
 
     for (i = 0; i < keys.length; i++) {
       key = keys[i];
@@ -294,32 +291,24 @@
   }
 
   function normalizeFieldValue(value) {
-    var parts;
-    var i;
-    var n;
+    var parts, i, n;
 
     if (value === null || value === undefined) {
       return "";
     }
 
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       return String(value);
     }
 
     if (value.results && value.results.length !== undefined) {
       parts = [];
-
       for (i = 0; i < value.results.length; i++) {
         n = normalizeFieldValue(value.results[i]);
         if (n) {
           parts.push(n);
         }
       }
-
       return parts.join(" / ");
     }
 
@@ -338,9 +327,7 @@
     var input = document.getElementById("keywordInput").value.replace(/^\s+|\s+$/g, "");
     var words = splitWords(input);
     var result = [];
-    var i;
-    var item;
-    var source;
+    var i, item, source;
 
     state.keywords = words;
     state.currentPage = 1;
@@ -384,8 +371,7 @@
   function splitWords(text) {
     var raw = text.split(/\s+/);
     var words = [];
-    var i;
-    var w;
+    var i, w;
 
     for (i = 0; i < raw.length; i++) {
       w = raw[i].replace(/^\s+|\s+$/g, "").toLowerCase();
@@ -432,10 +418,7 @@
     var listArea = document.getElementById("listArea");
     var pageItems = getPageItems();
     var html = [];
-    var i;
-    var item;
-    var selectedClass;
-    var preview;
+    var i, item, selectedClass, preview;
 
     document.getElementById("resultCount").innerText = state.filteredItems.length;
 
@@ -467,7 +450,6 @@
     }
 
     listArea.innerHTML = html.join("");
-
     bindListItemClicks();
   }
 
@@ -510,14 +492,8 @@
         gridRow("バッチID", item.batchId) +
         gridRow("更新日", formatDate(item.modified)) +
       '</div>' +
-      '<div class="detail-section">' +
-        '<h3>本文</h3>' +
-        '<div class="detail-box">' + formatContent(item.body) + '</div>' +
-      '</div>' +
-      '<div class="detail-section">' +
-        '<h3>回答</h3>' +
-        '<div class="detail-box">' + formatContent(item.answer) + '</div>' +
-      '</div>';
+      '<div class="detail-section"><h3>本文</h3><div class="detail-box">' + formatContent(item.body) + '</div></div>' +
+      '<div class="detail-section"><h3>回答</h3><div class="detail-box">' + formatContent(item.answer) + '</div></div>';
   }
 
   function gridRow(label, value) {
@@ -529,8 +505,7 @@
 
   function formatContent(value) {
     var text = String(value || "").replace(/^\s+|\s+$/g, "");
-    var safe;
-    var linked;
+    var safe, linked;
 
     if (!text) {
       return "—";
@@ -548,10 +523,7 @@
   function renderPager() {
     var pagerArea = document.getElementById("pagerArea");
     var totalPages = getTotalPages();
-    var tokens;
-    var html = [];
-    var i;
-    var token;
+    var tokens, html = [], i, token;
 
     if (!state.filteredItems.length || totalPages <= 1) {
       pagerArea.innerHTML = "";
@@ -560,28 +532,18 @@
 
     tokens = buildPageTokens(state.currentPage, totalPages);
 
-    html.push(
-      '<button class="pager-btn" data-page="' + (state.currentPage - 1) + '" ' +
-      (state.currentPage <= 1 ? "disabled" : "") + '>前へ</button>'
-    );
+    html.push('<button class="pager-btn" data-page="' + (state.currentPage - 1) + '" ' + (state.currentPage <= 1 ? "disabled" : "") + '>前へ</button>');
 
     for (i = 0; i < tokens.length; i++) {
       token = tokens[i];
-
       if (token === "...") {
         html.push('<span class="pager-ellipsis">…</span>');
       } else {
-        html.push(
-          '<button class="pager-btn ' + (token === state.currentPage ? "active" : "") +
-          '" data-page="' + token + '">' + token + '</button>'
-        );
+        html.push('<button class="pager-btn ' + (token === state.currentPage ? "active" : "") + '" data-page="' + token + '">' + token + '</button>');
       }
     }
 
-    html.push(
-      '<button class="pager-btn" data-page="' + (state.currentPage + 1) + '" ' +
-      (state.currentPage >= totalPages ? "disabled" : "") + '>次へ</button>'
-    );
+    html.push('<button class="pager-btn" data-page="' + (state.currentPage + 1) + '" ' + (state.currentPage >= totalPages ? "disabled" : "") + '>次へ</button>');
 
     pagerArea.innerHTML = html.join("");
     bindPagerClicks();
@@ -601,8 +563,7 @@
   function renderPageMeta() {
     var total = state.filteredItems.length;
     var totalPages = getTotalPages();
-    var start;
-    var end;
+    var start, end;
 
     if (!total) {
       document.getElementById("pageSummary").innerText = "0 件";
@@ -663,9 +624,7 @@
 
   function buildPageTokens(current, total) {
     var tokens = [];
-    var start;
-    var end;
-    var i;
+    var start, end, i;
 
     if (total <= 7) {
       for (i = 1; i <= total; i++) {
@@ -675,7 +634,6 @@
     }
 
     tokens.push(1);
-
     start = Math.max(2, current - 1);
     end = Math.min(total - 1, current + 1);
 
@@ -713,12 +671,7 @@
   }
 
   function formatDate(value) {
-    var d;
-    var y;
-    var m;
-    var day;
-    var hh;
-    var mm;
+    var d, y, m, day, hh, mm;
 
     if (!value) {
       return "—";
@@ -766,9 +719,7 @@
 
   function highlight(text, keywords) {
     var result = text;
-    var i;
-    var word;
-    var re;
+    var i, word, re;
 
     if (!keywords || !keywords.length) {
       return result;
