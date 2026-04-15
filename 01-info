@@ -3,11 +3,8 @@
 
   var CONFIG = {
     WEB_ABSOLUTE_URL: "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei",
+    LIST_SERVER_RELATIVE_URL: "/cc/jinkyu/kyuyokaikei/Lists/List1",
 
-    // リスト設定画面に表示されている名前と完全一致させる
-    LIST_TITLE: "人給給与（会計）業務Ｑ＆Ａ（ＰＷはヘルプデスクへ確認）",
-
-    // 画面表示用
     LIST_LABEL: "人給給与（会計）業務Q&A",
     LIST_NOTE: "PW はヘルプデスクへ確認",
 
@@ -92,10 +89,15 @@
 
         state.filteredItems = state.allItems.slice(0);
         state.currentPage = 1;
+
         syncSelectedToCurrentPage(true);
         renderAll();
 
-        setStatus(state.isTruncated ? "読込完了（" + CONFIG.MAX_FETCH + "件まで）" : "読込完了");
+        if (state.isTruncated) {
+          setStatus("読込完了（" + CONFIG.MAX_FETCH + "件まで）");
+        } else {
+          setStatus("読込完了");
+        }
       });
     });
   }
@@ -109,12 +111,15 @@
   function loadFieldMap(callback) {
     var url =
       CONFIG.WEB_ABSOLUTE_URL +
-      "/_api/web/lists/getbytitle('" +
-      escapeODataString(CONFIG.LIST_TITLE) +
+      "/_api/web/GetList('" +
+      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
       "')/fields?$select=Title,InternalName,Hidden";
 
     getJson(url, function (err, data) {
-      var results, map, i, f;
+      var results;
+      var map;
+      var i;
+      var f;
 
       if (err) {
         callback(err);
@@ -126,6 +131,7 @@
 
       for (i = 0; i < results.length; i++) {
         f = results[i];
+
         if (!f.Hidden && !map[f.Title]) {
           map[f.Title] = f.InternalName;
         }
@@ -141,8 +147,15 @@
     var nextUrl = buildItemsUrl();
 
     function loadNext() {
+      if (!nextUrl) {
+        state.allItems = collected;
+        callback(null);
+        return;
+      }
+
       getJson(nextUrl, function (err, data) {
-        var results, i;
+        var results;
+        var i;
 
         if (err) {
           callback(err);
@@ -165,16 +178,25 @@
           nextUrl = data.d && data.d.__next ? data.d.__next : "";
         }
 
-        if (nextUrl) {
-          loadNext();
-        } else {
-          state.allItems = collected;
-          callback(null);
-        }
+        loadNext();
       });
     }
 
     loadNext();
+  }
+
+  function buildItemsUrl() {
+    /*
+      あえて $select を使わない。
+      列の internal name 指定ミスによる 400 を避けるため。
+    */
+    return (
+      CONFIG.WEB_ABSOLUTE_URL +
+      "/_api/web/GetList('" +
+      escapeODataString(CONFIG.LIST_SERVER_RELATIVE_URL) +
+      "')/items?$top=" +
+      CONFIG.BATCH_SIZE
+    );
   }
 
   function getJson(url, callback) {
@@ -216,31 +238,6 @@
     xhr.send();
   }
 
-  function buildItemsUrl() {
-    var selectNames = ["Id", "Title", "Modified"];
-    var keys = getDisplayKeys();
-    var i, key, internalName;
-
-    for (i = 0; i < keys.length; i++) {
-      key = keys[i];
-      internalName = getInternalName(key);
-
-      if (internalName && arrayIndexOf(selectNames, internalName) === -1) {
-        selectNames.push(internalName);
-      }
-    }
-
-    return (
-      CONFIG.WEB_ABSOLUTE_URL +
-      "/_api/web/lists/getbytitle('" +
-      escapeODataString(CONFIG.LIST_TITLE) +
-      "')/items?$top=" +
-      CONFIG.BATCH_SIZE +
-      "&$select=" +
-      selectNames.join(",")
-    );
-  }
-
   function getDisplayKeys() {
     return [
       "businessCategory",
@@ -275,12 +272,19 @@
     };
 
     var keys = getDisplayKeys();
-    var i, key, internalName;
+    var i;
+    var key;
+    var internalName;
 
     for (i = 0; i < keys.length; i++) {
       key = keys[i];
       internalName = getInternalName(key);
-      item[key] = internalName ? normalizeFieldValue(raw[internalName]) : "";
+
+      if (internalName) {
+        item[key] = normalizeFieldValue(raw[internalName]);
+      } else {
+        item[key] = "";
+      }
     }
 
     if (!item.title) {
@@ -291,29 +295,40 @@
   }
 
   function normalizeFieldValue(value) {
-    var parts, i, n;
+    var parts;
+    var i;
+    var n;
 
     if (value === null || value === undefined) {
       return "";
     }
 
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
       return String(value);
     }
 
     if (value.results && value.results.length !== undefined) {
       parts = [];
+
       for (i = 0; i < value.results.length; i++) {
         n = normalizeFieldValue(value.results[i]);
         if (n) {
           parts.push(n);
         }
       }
+
       return parts.join(" / ");
     }
 
     if (value.Url) {
-      return value.Description ? value.Description + " " + value.Url : value.Url;
+      if (value.Description) {
+        return value.Description + " " + value.Url;
+      }
+      return value.Url;
     }
 
     if (value.Title) {
@@ -327,7 +342,9 @@
     var input = document.getElementById("keywordInput").value.replace(/^\s+|\s+$/g, "");
     var words = splitWords(input);
     var result = [];
-    var i, item, source;
+    var i;
+    var item;
+    var source;
 
     state.keywords = words;
     state.currentPage = 1;
@@ -371,10 +388,12 @@
   function splitWords(text) {
     var raw = text.split(/\s+/);
     var words = [];
-    var i, w;
+    var i;
+    var w;
 
     for (i = 0; i < raw.length; i++) {
       w = raw[i].replace(/^\s+|\s+$/g, "").toLowerCase();
+
       if (w) {
         words.push(w);
       }
@@ -418,7 +437,10 @@
     var listArea = document.getElementById("listArea");
     var pageItems = getPageItems();
     var html = [];
-    var i, item, selectedClass, preview;
+    var i;
+    var item;
+    var selectedClass;
+    var preview;
 
     document.getElementById("resultCount").innerText = state.filteredItems.length;
 
@@ -492,8 +514,14 @@
         gridRow("バッチID", item.batchId) +
         gridRow("更新日", formatDate(item.modified)) +
       '</div>' +
-      '<div class="detail-section"><h3>本文</h3><div class="detail-box">' + formatContent(item.body) + '</div></div>' +
-      '<div class="detail-section"><h3>回答</h3><div class="detail-box">' + formatContent(item.answer) + '</div></div>';
+      '<div class="detail-section">' +
+        '<h3>本文</h3>' +
+        '<div class="detail-box">' + formatContent(item.body) + '</div>' +
+      '</div>' +
+      '<div class="detail-section">' +
+        '<h3>回答</h3>' +
+        '<div class="detail-box">' + formatContent(item.answer) + '</div>' +
+      '</div>';
   }
 
   function gridRow(label, value) {
@@ -505,7 +533,8 @@
 
   function formatContent(value) {
     var text = String(value || "").replace(/^\s+|\s+$/g, "");
-    var safe, linked;
+    var safe;
+    var linked;
 
     if (!text) {
       return "—";
@@ -523,7 +552,10 @@
   function renderPager() {
     var pagerArea = document.getElementById("pagerArea");
     var totalPages = getTotalPages();
-    var tokens, html = [], i, token;
+    var tokens;
+    var html = [];
+    var i;
+    var token;
 
     if (!state.filteredItems.length || totalPages <= 1) {
       pagerArea.innerHTML = "";
@@ -532,18 +564,31 @@
 
     tokens = buildPageTokens(state.currentPage, totalPages);
 
-    html.push('<button class="pager-btn" data-page="' + (state.currentPage - 1) + '" ' + (state.currentPage <= 1 ? "disabled" : "") + '>前へ</button>');
+    html.push(
+      '<button class="pager-btn" data-page="' + (state.currentPage - 1) + '" ' +
+      (state.currentPage <= 1 ? "disabled" : "") + '>前へ</button>'
+    );
 
     for (i = 0; i < tokens.length; i++) {
       token = tokens[i];
+
       if (token === "...") {
         html.push('<span class="pager-ellipsis">…</span>');
       } else {
-        html.push('<button class="pager-btn ' + (token === state.currentPage ? "active" : "") + '" data-page="' + token + '">' + token + '</button>');
+        html.push(
+          '<button class="pager-btn ' +
+          (token === state.currentPage ? "active" : "") +
+          '" data-page="' + token + '">' +
+          token +
+          '</button>'
+        );
       }
     }
 
-    html.push('<button class="pager-btn" data-page="' + (state.currentPage + 1) + '" ' + (state.currentPage >= totalPages ? "disabled" : "") + '>次へ</button>');
+    html.push(
+      '<button class="pager-btn" data-page="' + (state.currentPage + 1) + '" ' +
+      (state.currentPage >= totalPages ? "disabled" : "") + '>次へ</button>'
+    );
 
     pagerArea.innerHTML = html.join("");
     bindPagerClicks();
@@ -563,7 +608,8 @@
   function renderPageMeta() {
     var total = state.filteredItems.length;
     var totalPages = getTotalPages();
-    var start, end;
+    var start;
+    var end;
 
     if (!total) {
       document.getElementById("pageSummary").innerText = "0 件";
@@ -619,12 +665,18 @@
   }
 
   function getTotalPages() {
-    return state.filteredItems.length ? Math.ceil(state.filteredItems.length / CONFIG.PAGE_SIZE) : 0;
+    if (!state.filteredItems.length) {
+      return 0;
+    }
+
+    return Math.ceil(state.filteredItems.length / CONFIG.PAGE_SIZE);
   }
 
   function buildPageTokens(current, total) {
     var tokens = [];
-    var start, end, i;
+    var start;
+    var end;
+    var i;
 
     if (total <= 7) {
       for (i = 1; i <= total; i++) {
@@ -634,6 +686,7 @@
     }
 
     tokens.push(1);
+
     start = Math.max(2, current - 1);
     end = Math.min(total - 1, current + 1);
 
@@ -667,11 +720,21 @@
 
   function shorten(text, max) {
     text = String(text || "");
-    return text.length > max ? text.substring(0, max) + " ..." : text;
+
+    if (text.length > max) {
+      return text.substring(0, max) + " ...";
+    }
+
+    return text;
   }
 
   function formatDate(value) {
-    var d, y, m, day, hh, mm;
+    var d;
+    var y;
+    var m;
+    var day;
+    var hh;
+    var mm;
 
     if (!value) {
       return "—";
@@ -693,7 +756,8 @@
   }
 
   function pad2(n) {
-    return String(n).length === 1 ? "0" + n : String(n);
+    n = String(n);
+    return n.length === 1 ? "0" + n : n;
   }
 
   function setStatus(text) {
@@ -719,18 +783,21 @@
 
   function highlight(text, keywords) {
     var result = text;
-    var i, word, re;
+    var sorted;
+    var i;
+    var word;
+    var re;
 
     if (!keywords || !keywords.length) {
       return result;
     }
 
-    keywords = keywords.slice(0).sort(function (a, b) {
+    sorted = keywords.slice(0).sort(function (a, b) {
       return b.length - a.length;
     });
 
-    for (i = 0; i < keywords.length; i++) {
-      word = keywords[i];
+    for (i = 0; i < sorted.length; i++) {
+      word = sorted[i];
       re = new RegExp("(" + escapeRegExp(word) + ")", "gi");
       result = result.replace(re, "<mark>$1</mark>");
     }
@@ -740,17 +807,5 @@
 
   function escapeODataString(value) {
     return String(value).replace(/'/g, "''");
-  }
-
-  function arrayIndexOf(arr, value) {
-    var i;
-
-    for (i = 0; i < arr.length; i++) {
-      if (arr[i] === value) {
-        return i;
-      }
-    }
-
-    return -1;
   }
 })();
