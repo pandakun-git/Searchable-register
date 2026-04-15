@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>SharePoint接続テスト</title>
+</head>
+<body>
+  <h1>SharePoint接続テスト</h1>
+  <pre id="log">開始前</pre>
+
+<script>
+(async () => {
+  const log = document.getElementById("log");
+
+  function write(msg) {
+    log.textContent += "\n" + msg;
+  }
+
+  const WEB_URL = "https://cc-n.gbase.gsdf.mod.go.jp/cc/jinkyu/kyuyokaikei";
+  const LIST_URL = "/cc/jinkyu/kyuyokaikei/Lists/List1";
+
+  async function getJson(url) {
+    write("アクセス中:");
+    write(url);
+
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json;odata=verbose"
+      },
+      credentials: "include"
+    });
+
+    write("HTTP status: " + res.status);
+
+    const text = await res.text();
+
+    if (!res.ok) {
+      write("エラー本文:");
+      write(text.slice(0, 1000));
+      throw new Error("HTTP " + res.status);
+    }
+
+    return JSON.parse(text);
+  }
+
+  try {
+    log.textContent = "JS起動OK";
+
+    const listInfoUrl =
+      WEB_URL + "/_api/web/GetList('" + LIST_URL.replace(/'/g, "''") + "')" +
+      "?$select=Title,ItemCount";
+
+    const listInfo = await getJson(listInfoUrl);
+
+    write("リスト接続OK");
+    write("リスト名: " + listInfo.d.Title);
+    write("件数: " + listInfo.d.ItemCount);
+
+    const itemUrl =
+      WEB_URL + "/_api/web/GetList('" + LIST_URL.replace(/'/g, "''") + "')" +
+      "/items?$top=1&$select=Id,Title,Modified";
+
+    const itemData = await getJson(itemUrl);
+
+    write("アイテム取得OK");
+    write("取得件数: " + itemData.d.results.length);
+
+    if (itemData.d.results.length > 0) {
+      write("先頭タイトル: " + itemData.d.results[0].Title);
+    }
+
+    write("=== SUCCESS ===");
+  } catch (e) {
+    write("=== ERROR ===");
+    write(e.message);
+  }
+})();
+</script>
+</body>
+</html>
