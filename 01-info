@@ -188,7 +188,7 @@
   function buildItemsUrl() {
     /*
       あえて $select を使わない。
-      列の internal name 指定ミスによる 400 を避けるため。
+      internal name 指定ミスによる 400 を避けるため。
     */
     return (
       CONFIG.WEB_ABSOLUTE_URL +
@@ -451,20 +451,24 @@
 
     for (i = 0; i < pageItems.length; i++) {
       item = pageItems[i];
+
       selectedClass = String(item.id) === String(state.selectedId) ? "selected" : "";
-      preview = shorten(item.body || item.answer || item.manualPage || "", 90);
+      preview = shorten(item.body || item.answer || item.manualPage || item.title || "", 90);
 
       html.push(
         '<div class="list-item ' + selectedClass + '" data-id="' + escapeHtml(item.id) + '">' +
           '<div class="item-title">' + highlight(escapeHtml(item.title), state.keywords) + '</div>' +
+
           '<div class="chips">' +
             (item.businessCategory ? '<span class="chip">' + escapeHtml(item.businessCategory) + '</span>' : '') +
             (item.actorCategory ? '<span class="chip">' + escapeHtml(item.actorCategory) + '</span>' : '') +
             (item.situation ? '<span class="chip">' + escapeHtml(item.situation) + '</span>' : '') +
           '</div>' +
+
           '<div class="item-preview">' + highlight(escapeHtml(preview), state.keywords) + '</div>' +
+
           '<div class="item-footer">' +
-            '<span>' + (item.unitName ? "部隊等名: " + escapeHtml(item.unitName) : "") + '</span>' +
+            '<span>ID: ' + escapeHtml(item.id) + '</span>' +
             '<span>更新日: ' + formatDate(item.modified) + '</span>' +
           '</div>' +
         '</div>'
@@ -476,16 +480,31 @@
   }
 
   function bindListItemClicks() {
-    var items = document.getElementById("listArea").getElementsByClassName("list-item");
-    var i;
+    var listArea = document.getElementById("listArea");
 
-    for (i = 0; i < items.length; i++) {
-      items[i].onclick = function () {
-        state.selectedId = this.getAttribute("data-id");
-        renderList();
-        renderDetail();
-      };
-    }
+    listArea.onclick = function (e) {
+      var target = e.target || e.srcElement;
+      var row = null;
+
+      while (target && target !== listArea) {
+        if (target.className && String(target.className).indexOf("list-item") !== -1) {
+          row = target;
+          break;
+        }
+        target = target.parentNode;
+      }
+
+      if (!row) {
+        return;
+      }
+
+      state.selectedId = String(row.getAttribute("data-id"));
+
+      setStatus("選択ID: " + state.selectedId);
+
+      renderList();
+      renderDetail();
+    };
   }
 
   function renderDetail() {
@@ -494,13 +513,19 @@
 
     if (!item) {
       detailArea.innerHTML =
-        '<div class="placeholder">左の一覧からデータを選択すると、<br>詳細内容がここに表示されます。</div>';
+        '<div class="placeholder">' +
+          '詳細表示対象がありません。<br>' +
+          'filteredItems: ' + state.filteredItems.length + '<br>' +
+          'selectedId: ' + escapeHtml(state.selectedId || "") +
+        '</div>';
       return;
     }
 
     detailArea.innerHTML =
       '<h2 class="detail-title">' + highlight(escapeHtml(item.title), state.keywords) + '</h2>' +
+
       '<div class="detail-grid">' +
+        gridRow("ID", item.id) +
         gridRow("業務区分", item.businessCategory) +
         gridRow("アクター区分", item.actorCategory) +
         gridRow("方面等区分", item.directionCategory) +
@@ -514,10 +539,12 @@
         gridRow("バッチID", item.batchId) +
         gridRow("更新日", formatDate(item.modified)) +
       '</div>' +
+
       '<div class="detail-section">' +
         '<h3>本文</h3>' +
         '<div class="detail-box">' + formatContent(item.body) + '</div>' +
       '</div>' +
+
       '<div class="detail-section">' +
         '<h3>回答</h3>' +
         '<div class="detail-box">' + formatContent(item.answer) + '</div>' +
