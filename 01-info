@@ -27,6 +27,27 @@
       answer: "回答",
       situation: "状況",
       batchId: "バッチID"
+    },
+
+    /*
+      画像で確認した internal name 候補。
+      表示名から取れない場合の保険として使う。
+      もし一部だけまだ空なら、ここだけ実際の internal name に合わせて直せばOK。
+    */
+    INTERNAL_NAMES: {
+      businessCategory: "_x696d__x52d9__x533a__x5206_",
+      actorCategory: "_x30a2__x30af__x30bf__x30fc__x533a__x5206_",
+      operatorStaffNo: "_x8077__x54e1__x756a__x53f7__xff08__x64cd__x4f5c__x8005__xff09",
+      targetStaffNo: "_x8077__x54e1__x756a__x53f7__xff08__x8a72__x5f53__x8005__x8005__xff09",
+      manualPage: "_x30de__x30cb__x30e5__x30a2__x30eb__x30da__x30fc__x30b8",
+      body: "_x672c__x6587__xff08__x500b__x4eba__x60c5__x5831__x306e__x5165__x529b__x7981__x6b62__xff09",
+      directionCategory: "_x65b9__x9762__x7b49__x533a__x5206_",
+      unitName: "_x90e8__x968a__x7b49__x540d_",
+      rankName: "_x6c0f__x968e__x7d1a_",
+      extensionNo: "_x5185__x7dda__x756a__x53f7_",
+      answer: "_x56de__x7b54_",
+      situation: "_x72b6__x6cc1_",
+      batchId: "TranslationStateJobId"
     }
   };
 
@@ -87,6 +108,8 @@
           return;
         }
 
+        sortByIdDesc(state.allItems);
+
         state.filteredItems = state.allItems.slice(0);
         state.currentPage = 1;
 
@@ -132,8 +155,9 @@
       for (i = 0; i < results.length; i++) {
         f = results[i];
 
-        if (!f.Hidden && !map[f.Title]) {
+        if (!f.Hidden) {
           map[f.Title] = f.InternalName;
+          map[normalizeName(f.Title)] = f.InternalName;
         }
       }
 
@@ -186,10 +210,6 @@
   }
 
   function buildItemsUrl() {
-    /*
-      あえて $select を使わない。
-      internal name 指定ミスによる 400 を避けるため。
-    */
     return (
       CONFIG.WEB_ABSOLUTE_URL +
       "/_api/web/GetList('" +
@@ -258,11 +278,40 @@
   }
 
   function getInternalName(key) {
+    var displayName;
+    var normalized;
+
     if (key === "title") {
       return "Title";
     }
 
-    return state.fieldMap[CONFIG.DISPLAY_NAMES[key]] || null;
+    displayName = CONFIG.DISPLAY_NAMES[key];
+    normalized = normalizeName(displayName);
+
+    if (state.fieldMap[displayName]) {
+      return state.fieldMap[displayName];
+    }
+
+    if (state.fieldMap[normalized]) {
+      return state.fieldMap[normalized];
+    }
+
+    if (CONFIG.INTERNAL_NAMES[key]) {
+      return CONFIG.INTERNAL_NAMES[key];
+    }
+
+    return null;
+  }
+
+  function normalizeName(value) {
+    return String(value || "")
+      .replace(/\s/g, "")
+      .replace(/　/g, "")
+      .replace(/\(/g, "（")
+      .replace(/\)/g, "）")
+      .replace(/&/g, "＆")
+      .replace(/Q/g, "Ｑ")
+      .replace(/A/g, "Ａ");
   }
 
   function normalizeItem(raw) {
@@ -274,17 +323,10 @@
     var keys = getDisplayKeys();
     var i;
     var key;
-    var internalName;
 
     for (i = 0; i < keys.length; i++) {
       key = keys[i];
-      internalName = getInternalName(key);
-
-      if (internalName) {
-        item[key] = normalizeFieldValue(raw[internalName]);
-      } else {
-        item[key] = "";
-      }
+      item[key] = pickRawValue(raw, key);
     }
 
     if (!item.title) {
@@ -292,6 +334,29 @@
     }
 
     return item;
+  }
+
+  function pickRawValue(raw, key) {
+    var internalName;
+    var fallbackName;
+
+    if (key === "title") {
+      return normalizeFieldValue(raw.Title);
+    }
+
+    internalName = getInternalName(key);
+
+    if (internalName && raw.hasOwnProperty(internalName)) {
+      return normalizeFieldValue(raw[internalName]);
+    }
+
+    fallbackName = CONFIG.INTERNAL_NAMES[key];
+
+    if (fallbackName && raw.hasOwnProperty(fallbackName)) {
+      return normalizeFieldValue(raw[fallbackName]);
+    }
+
+    return "";
   }
 
   function normalizeFieldValue(value) {
@@ -335,7 +400,28 @@
       return value.Title;
     }
 
+    if (value.LookupValue) {
+      return value.LookupValue;
+    }
+
     return "";
+  }
+
+  function sortByIdDesc(items) {
+    items.sort(function (a, b) {
+      var aa = parseInt(a.id, 10);
+      var bb = parseInt(b.id, 10);
+
+      if (isNaN(aa)) {
+        aa = 0;
+      }
+
+      if (isNaN(bb)) {
+        bb = 0;
+      }
+
+      return bb - aa;
+    });
   }
 
   function applySearch() {
@@ -365,6 +451,8 @@
         result.push(item);
       }
     }
+
+    sortByIdDesc(result);
 
     state.filteredItems = result;
     syncSelectedToCurrentPage(true);
@@ -410,6 +498,9 @@
     for (i = 0; i < keys.length; i++) {
       arr.push(item[keys[i]] || "");
     }
+
+    arr.push(item.id || "");
+    arr.push(item.modified || "");
 
     return arr.join(" ").toLowerCase();
   }
