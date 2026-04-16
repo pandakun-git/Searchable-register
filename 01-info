@@ -267,7 +267,7 @@
 
   function normalizeItem(raw) {
     var item = {
-      id: raw.Id,
+      id: raw.Id || raw.ID || "",
       modified: raw.Modified || ""
     };
 
@@ -288,7 +288,7 @@
     }
 
     if (!item.title) {
-      item.title = "(タイトルなし)";
+      item.title = raw.Title ? String(raw.Title) : "(タイトルなし)";
     }
 
     return item;
@@ -451,11 +451,11 @@
 
     for (i = 0; i < pageItems.length; i++) {
       item = pageItems[i];
-      selectedClass = item.id === state.selectedId ? "selected" : "";
+      selectedClass = String(item.id) === String(state.selectedId) ? "selected" : "";
       preview = shorten(item.body || item.answer || item.manualPage || "", 90);
 
       html.push(
-        '<div class="list-item ' + selectedClass + '" data-id="' + item.id + '">' +
+        '<div class="list-item ' + selectedClass + '" data-id="' + escapeHtml(item.id) + '">' +
           '<div class="item-title">' + highlight(escapeHtml(item.title), state.keywords) + '</div>' +
           '<div class="chips">' +
             (item.businessCategory ? '<span class="chip">' + escapeHtml(item.businessCategory) + '</span>' : '') +
@@ -481,7 +481,7 @@
 
     for (i = 0; i < items.length; i++) {
       items[i].onclick = function () {
-        state.selectedId = Number(this.getAttribute("data-id"));
+        state.selectedId = this.getAttribute("data-id");
         renderList();
         renderDetail();
       };
@@ -648,14 +648,14 @@
     }
 
     for (i = 0; i < pageItems.length; i++) {
-      if (pageItems[i].id === state.selectedId) {
+      if (String(pageItems[i].id) === String(state.selectedId)) {
         exists = true;
         break;
       }
     }
 
     if (forceFirst || !exists) {
-      state.selectedId = pageItems[0].id;
+      state.selectedId = String(pageItems[0].id);
     }
   }
 
@@ -709,13 +709,21 @@
   function findSelectedItem() {
     var i;
 
+    if (!state.filteredItems.length) {
+      return null;
+    }
+
+    if (state.selectedId === null || state.selectedId === undefined || state.selectedId === "") {
+      return state.filteredItems[0];
+    }
+
     for (i = 0; i < state.filteredItems.length; i++) {
-      if (state.filteredItems[i].id === state.selectedId) {
+      if (String(state.filteredItems[i].id) === String(state.selectedId)) {
         return state.filteredItems[i];
       }
     }
 
-    return null;
+    return state.filteredItems[0];
   }
 
   function shorten(text, max) {
