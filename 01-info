@@ -12,21 +12,72 @@
     MAX_FETCH: 5000,
     PAGE_SIZE: 15,
 
+    /*
+      internal name 固定指定。
+      REST API上で OData_ が付く場合も pickRawValue() 側で吸収する。
+    */
     INTERNAL_NAMES: {
-      businessCategory: "_x696d__x52d9__x533a__x5206_",
-      actorCategory: "_x30a2__x30af__x30bf__x30fc__x53",
-      operatorStaffNo: "_x8077__x54e1__x756a__x53f7__xff",
-      targetStaffNo: "_x8077__x54e1__x756a__x53f7__xff0",
-      manualPage: "_x30de__x30cb__x30e5__x30a2__x30",
-      title: "Title",
-      body: "_x672c__x6587_",
-      directionCategory: "_x65b9__x9762__x7b49__x533a__x52",
-      unitName: "_x90e8__x968a__x540d_",
-      rankName: "_x6c0f__x968e__x7d1a_",
-      extensionNo: "_x5185__x7dda__x756a__x53f7_",
-      answer: "_x56de__x7b54_",
-      situation: "_x72b6__x6cc1_",
-      batchId: "TranslationStateJobId"
+      businessCategory: [
+        "_x696d__x52d9__x533a__x5206_"
+      ],
+
+      actorCategory: [
+        "_x30a2__x30af__x30bf__x30fc__x53",
+        "_x30a2__x30af__x30bf__x30fc__x533a__x5206_"
+      ],
+
+      operatorStaffNo: [
+        "_x8077__x54e1__x756a__x53f7__xff",
+        "_x8077__x54e1__x756a__x53f7__xff08__x64cd__x4f5c__x8005__xff09"
+      ],
+
+      targetStaffNo: [
+        "_x8077__x54e1__x756a__x53f7__xff0",
+        "_x8077__x54e1__x756a__x53f7__xff08__x8a72__x5f53__x8005__xff09"
+      ],
+
+      manualPage: [
+        "_x30de__x30cb__x30e5__x30a2__x30",
+        "_x30de__x30cb__x30e5__x30a2__x30eb__x30da__x30fc__x30b8"
+      ],
+
+      title: [
+        "Title"
+      ],
+
+      body: [
+        "_x672c__x6587_"
+      ],
+
+      directionCategory: [
+        "_x65b9__x9762__x7b49__x533a__x52",
+        "_x65b9__x9762__x7b49__x533a__x5206_"
+      ],
+
+      unitName: [
+        "_x90e8__x968a__x540d_",
+        "_x90e8__x968a__x7b49__x540d_"
+      ],
+
+      rankName: [
+        "_x6c0f__x968e__x7d1a_"
+      ],
+
+      extensionNo: [
+        "_x5185__x7dda__x756a__x53f7_"
+      ],
+
+      answer: [
+        "_x56de__x7b54_"
+      ],
+
+      situation: [
+        "_x72b6__x6cc1_"
+      ],
+
+      batchId: [
+        "TranslationStateJobId"
+      ]
     }
   };
 
@@ -146,6 +197,10 @@
   }
 
   function buildItemsUrl() {
+    /*
+      あえて $select を使わない。
+      取得列指定による 400 エラーを避けるため。
+    */
     return (
       CONFIG.WEB_ABSOLUTE_URL +
       "/_api/web/GetList('" +
@@ -213,8 +268,8 @@
     ];
   }
 
-  function getInternalName(key) {
-    return CONFIG.INTERNAL_NAMES[key] || null;
+  function getInternalNames(key) {
+    return CONFIG.INTERNAL_NAMES[key] || [];
   }
 
   function normalizeItem(raw) {
@@ -240,17 +295,62 @@
   }
 
   function pickRawValue(raw, key) {
-    var internalName = getInternalName(key);
+    var internalNames = getInternalNames(key);
+    var i;
+    var internalName;
+    var odataName;
+    var prop;
+    var lowerInternal;
+    var lowerOData;
 
-    if (!internalName) {
-      return "";
-    }
+    for (i = 0; i < internalNames.length; i++) {
+      internalName = internalNames[i];
 
-    if (raw.hasOwnProperty(internalName)) {
-      return normalizeFieldValue(raw[internalName]);
+      if (!internalName) {
+        continue;
+      }
+
+      /*
+        1. 通常の internal name
+        例: Title
+      */
+      if (hasOwn(raw, internalName)) {
+        return normalizeFieldValue(raw[internalName]);
+      }
+
+      /*
+        2. SharePoint RESTで _ 始まりの列に OData_ が付く場合
+        例: _x672c__x6587_ → OData__x672c__x6587_
+      */
+      odataName = "OData_" + internalName;
+
+      if (hasOwn(raw, odataName)) {
+        return normalizeFieldValue(raw[odataName]);
+      }
+
+      /*
+        3. 大文字小文字差異を吸収
+      */
+      lowerInternal = String(internalName).toLowerCase();
+      lowerOData = String(odataName).toLowerCase();
+
+      for (prop in raw) {
+        if (hasOwn(raw, prop)) {
+          if (
+            String(prop).toLowerCase() === lowerInternal ||
+            String(prop).toLowerCase() === lowerOData
+          ) {
+            return normalizeFieldValue(raw[prop]);
+          }
+        }
+      }
     }
 
     return "";
+  }
+
+  function hasOwn(obj, prop) {
+    return Object.prototype.hasOwnProperty.call(obj, prop);
   }
 
   function normalizeFieldValue(value) {
